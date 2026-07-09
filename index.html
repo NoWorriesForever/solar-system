@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>太阳系 · 3D 运转演示</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #05060f; }
+  #sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #sky:active { cursor: grabbing; }
+
+  #ui {
+    position: fixed; left: 16px; top: 14px; z-index: 10;
+    color: #eaf0ff; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    pointer-events: none;
+  }
+  #ui h1 { font-size: 18px; font-weight: 700; letter-spacing: .5px; text-shadow: 0 2px 10px #000; }
+  #ui .hint { font-size: 12.5px; color: #9fb0d8; margin-top: 4px; text-shadow: 0 1px 6px #000; }
+
+  #panel {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 10;
+    display: flex; align-items: center; gap: 14px;
+    background: rgba(16,22,44,.72); border: 1px solid #2a3766; border-radius: 14px;
+    padding: 10px 16px; backdrop-filter: blur(6px);
+    color: #eaf0ff; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  #panel button {
+    background: #1b2547; color: #eaf0ff; border: 1px solid #34437a; border-radius: 9px;
+    padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap;
+  }
+  #panel button:active { transform: scale(.96); }
+  #panel .speed { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  #panel input[type=range] { width: 150px; accent-color: #5b8cff; }
+  #panel .val { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; color: #ffd166; }
+
+  #panel .modes { display: flex; gap: 6px; background: #0f1733; border: 1px solid #34437a; border-radius: 10px; padding: 3px; }
+  #panel .modes button { border: none; background: transparent; color: #9fb0d8; padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+  #panel .modes button.active { background: #3a4f9e; color: #fff; }
+
+  #flag {
+    position: fixed; right: 14px; bottom: 18px; z-index: 10; max-width: 240px;
+    color: #ffcf8a; font-size: 11.5px; line-height: 1.5; text-align: right;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    text-shadow: 0 1px 6px #000; pointer-events: none;
+  }
+
+  /* 星球详情页 */
+  #detail {
+    position: fixed; inset: 0; z-index: 20; display: flex;
+    background: radial-gradient(1200px 800px at 70% -10%, #16204a 0%, #05060f 60%);
+    color: #eaf0ff; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  #detail.hidden { display: none; }
+  #detail .left {
+    width: 38%; min-width: 300px; max-width: 460px; padding: 26px 26px 26px 30px;
+    overflow-y: auto; display: flex; flex-direction: column; gap: 14px;
+  }
+  #detail .back {
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+    background: rgba(27,37,71,.8); border: 1px solid #34437a; color: #cdd8ff;
+    border-radius: 10px; padding: 8px 14px; font-size: 14px; cursor: pointer;
+  }
+  #detail .back:active { transform: scale(.97); }
+  #detail h2 { font-size: 30px; margin: 2px 0 0; letter-spacing: 1px; }
+  #detail .tag { font-size: 14px; color: #ffd166; margin-top: -6px; }
+  #detail .stats {
+    list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    background: rgba(16,22,44,.6); border: 1px solid #243156; border-radius: 14px; padding: 14px 16px;
+  }
+  #detail .stats li { font-size: 13.5px; color: #cdd8ff; line-height: 1.5; }
+  #detail .facts-title { font-size: 15px; color: #9fb0d8; margin: 4px 0 -4px; }
+  #detail .facts { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  #detail .facts li { font-size: 14.5px; line-height: 1.7; color: #e7edff; padding-left: 20px; position: relative; }
+  #detail .facts li::before { content: "★"; position: absolute; left: 0; color: #5b8cff; font-size: 12px; top: 3px; }
+  #detail .src { font-size: 11.5px; color: #7e8db5; margin-top: auto; }
+  #detail .explain {
+    font-size: 14.5px; line-height: 1.75; color: #e7edff;
+    background: rgba(91,140,255,.12); border: 1px solid #2f3f78; border-radius: 14px; padding: 14px 16px;
+  }
+  #detail .explain::before { content: "🧒 讲给孩子听："; display: block; font-size: 12.5px; color: #9fd0ff; margin-bottom: 6px; }
+  #detail .quiz-title { font-size: 15px; color: #9fb0d8; margin: 6px 0 -2px; }
+  #detail .q { margin-bottom: 14px; }
+  #detail .q .qt { font-size: 14.5px; font-weight: 600; margin-bottom: 9px; color: #fff; }
+  #detail .opt {
+    display: block; width: 100%; text-align: left; background: #0f1733; color: #eaf0ff;
+    border: 1px solid #2a3766; border-radius: 12px; padding: 11px 14px; margin-bottom: 8px;
+    font-size: 14px; cursor: pointer; transition: .12s; font-family: inherit;
+  }
+  #detail .opt:active { transform: scale(.98); }
+  #detail .opt:disabled { cursor: default; }
+  #detail .opt.right { background: rgba(65,209,139,.18); border-color: #41d18b; color: #bff5d8; }
+  #detail .opt.wrong { background: rgba(255,107,107,.16); border-color: #ff6b6b; color: #ffd0d0; }
+  #detail .feedback { font-size: 13px; margin-top: 4px; min-height: 18px; }
+  #detail .feedback.ok { color: #41d18b; }
+  #detail .feedback.bad { color: #ff8f8f; line-height: 1.5; }
+  #detail .next-btn {
+    display: block; width: 100%; border: none; border-radius: 14px; padding: 14px;
+    font-size: 16px; font-weight: 700; color: #08122e; background: linear-gradient(90deg,#7aa2ff,#9db8ff);
+    cursor: pointer; margin-top: 4px; font-family: inherit;
+  }
+  #detail .next-btn:active { transform: scale(.99); }
+  #detail .right { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; min-width: 0; }
+  #detailCanvas { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+  #detailCanvas:active { cursor: grabbing; }
+  #detail .model-note {
+    position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
+    font-size: 12.5px; color: #9fb0d8; background: rgba(10,16,36,.55);
+    border: 1px solid #2a3766; border-radius: 10px; padding: 5px 12px; white-space: nowrap;
+  }
+  #detail .hint3d {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    color: #9fb0d8; font-size: 12.5px; pointer-events: none; text-shadow: 0 1px 6px #000;
+  }
+  @media (max-width: 720px) {
+    #detail { flex-direction: column; }
+    #detail .left { width: 100%; max-width: none; min-width: 0; max-height: 46%; }
+    #detail .right { flex: 1; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="sky"></canvas>
+
+  <div id="ui">
+    <h1>🪐 太阳系 · 3D 运转演示</h1>
+    <div class="hint">滚轮缩放(可贴近看) · 拖动(下方切换「旋转视角 / 拖动平移」) · 点击星球 / 月球 / 小行星带看详情 · 真实照片贴图(联网加载，断网自动回退)</div>
+  </div>
+
+  <div id="panel">
+    <button id="playBtn">⏸ 暂停</button>
+    <div class="modes" id="modes">
+      <button data-mode="rotate" class="active">旋转视角</button>
+      <button data-mode="pan">拖动平移</button>
+    </div>
+    <div class="speed">
+      <span>速度</span>
+      <input id="speed" type="range" min="0.1" max="10" step="0.1" value="1" />
+      <span class="val" id="speedVal">1.0×</span>
+    </div>
+    <button id="resetBtn">↺ 复位视角</button>
+  </div>
+
+  <div id="flag">⚠️ 自转速度为「示意加速」（保持行星间相对快慢），属待定项，后续可改。</div>
+
+  <!-- 星球详情页：左侧信息，右侧可旋转 3D 建模 -->
+  <div id="detail" class="hidden">
+    <div class="left">
+      <button class="back" id="backBtn">← 返回太阳系</button>
+      <h2 id="d-name">星球</h2>
+      <div class="tag" id="d-tag"></div>
+      <ul class="stats" id="d-stats"></ul>
+      <div class="facts-title">趣味小知识</div>
+      <ul class="facts" id="d-facts"></ul>
+      <div class="explain" id="d-explain"></div>
+      <div class="quiz-title">🧠 小测验</div>
+      <div class="quiz" id="d-quiz"></div>
+      <button class="next-btn" id="d-next" style="display:none">去探索下一个星球 →</button>
+      <div class="src">资料来源：NASA / 国际天文联合会公开科普资料（可溯源）</div>
+    </div>
+    <div class="right">
+      <canvas id="detailCanvas"></canvas>
+      <div class="model-note" id="d-model-note"></div>
+      <div class="hint3d" id="d-hint3d">拖动旋转 · 滚轮缩放（使用真实表面贴图）</div>
+    </div>
+  </div>
+
+  <script src="bennu_model.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
