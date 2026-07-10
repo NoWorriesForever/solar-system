@@ -124,11 +124,15 @@
 
   <div id="ui">
     <h1>🪐 太阳系 · 3D 运转演示</h1>
-    <div class="hint">滚轮缩放(可贴近看) · 拖动(下方切换「旋转视角 / 拖动平移」) · 点击星球 / 月球 / 小行星带看详情 · 真实照片贴图(联网加载，断网自动回退)</div>
+    <div class="hint">滚轮缩放(可贴近看) · 拖动(下方切换「旋转视角 / 拖动平移」) · 点击星球 / 月球 / 小行星带看详情 · 顶部可切换「太阳系 / 地月系」· 真实照片贴图(联网加载，断网自动回退)</div>
   </div>
 
   <div id="panel">
     <button id="playBtn">⏸ 暂停</button>
+    <div class="modes" id="viewModes">
+      <button data-view="solar" class="active">太阳系</button>
+      <button data-view="earthmoon">地月系</button>
+    </div>
     <div class="modes" id="modes">
       <button data-mode="rotate" class="active">旋转视角</button>
       <button data-mode="pan">拖动平移</button>

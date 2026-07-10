@@ -382,6 +382,19 @@ let RING_SRC = null, ringGrad = null;
 const SUN_R = 6.5;
 let sunSpin = 0;
 
+/* ---------- 地月系专题场景（示意比例）：把太阳 + 地球 + 月球单独拉出来 ---------- */
+let emMode = false;
+let emEarthSpin = 0, emMoonAngle = 0, emMoonSpin = 0;
+const EM = {
+  earthR: 26,            // 地球显示半径（示意，非真实比例）
+  moonR: 7,              // 月球显示半径（≈ 地球 0.27 倍，保留真实大小比）
+  moonOrbitR: 95,        // 月球绕地轨道半径（示意，真实约 60 倍地球半径，已压缩便于观察）
+  sunDist: 300,          // 太阳示意距离（真实约 390 倍地月距离，已大幅压缩）
+  sunR: 40,              // 太阳显示半径（示意，真实约地球 109 倍）
+  earthSpinSpeed: (2 * Math.PI * 3) / 8,    // 地球自转：约 8 秒一圈（timeScale=1）
+  moonOrbitSpeed: (2 * Math.PI * 3) / 14,   // 月球公转：约 14 秒一圈 = 一个「月相周期」
+};
+
 /* ---------- 画布 ---------- */
 const canvas = document.getElementById('sky');
 const ctx = canvas.getContext('2d');
@@ -964,6 +977,89 @@ function hitTestBelt(mx, my) {
   return pointInPolygon(mx, my, outer) && !pointInPolygon(mx, my, inner);
 }
 
+/* ---------- 地月系专题渲染（示意比例）---------- */
+// 由月球相对太阳的方位角（公转方向）判断月相名称
+function emPhaseName(deg) {
+  const a = ((deg % 360) + 360) % 360;
+  if (a < 15 || a >= 345) return '新月';
+  if (a < 75) return '蛾眉月（盈）';
+  if (a <= 105) return '上弦月';
+  if (a < 165) return '盈凸月';
+  if (a <= 195) return '满月';
+  if (a < 255) return '亏凸月';
+  if (a <= 285) return '下弦月';
+  return '残月';
+}
+function drawEarthMoonScene() {
+  const sunPos = { x: EM.sunDist, y: 0, z: 0 };
+  // 月球位置（地球在原点）
+  const mPos = { x: EM.moonOrbitR * Math.cos(emMoonAngle), y: 0, z: EM.moonOrbitR * Math.sin(emMoonAngle) };
+  // 月相：月球相对太阳的夹角（0=新月, 90=上弦, 180=满月, 270=下弦）
+  const ang = Math.atan2(mPos.z, mPos.x) * 180 / Math.PI;
+  const illum = (1 - Math.cos(ang * Math.PI / 180)) / 2;
+  const phase = emPhaseName(ang);
+
+  // 月球公转轨道（淡虚线，帮助理解"月球绕着地球转"）
+  ctx.save();
+  ctx.strokeStyle = 'rgba(180,200,255,0.18)';
+  ctx.setLineDash([4, 7]); ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i <= 80; i++) {
+    const a = i / 80 * Math.PI * 2;
+    const q = project({ x: EM.moonOrbitR * Math.cos(a), y: 0, z: EM.moonOrbitR * Math.sin(a) });
+    if (!q.visible) continue;
+    if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+  }
+  ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+
+  // 太阳（侧方光源，先画）
+  const sp = project(sunPos);
+  if (sp.visible) {
+    const r = (focal * EM.sunR) / sp.depth;
+    const glow = ctx.createRadialGradient(sp.x, sp.y, r * 0.6, sp.x, sp.y, r * 2.2);
+    glow.addColorStop(0, 'rgba(255,200,80,0.5)');
+    glow.addColorStop(1, 'rgba(255,160,40,0)');
+    ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(sp.x, sp.y, r * 2.6, 0, Math.PI * 2); ctx.fill();
+    drawSphere(SUN.src, sp, r, sunSpin, UP, true);
+    ctx.font = '14px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText('太阳（示意）', sp.x + 1, sp.y - r - 6 + 1);
+    ctx.fillStyle = '#fff3c4'; ctx.fillText('太阳（示意）', sp.x, sp.y - r - 6);
+  }
+
+  // 地球 + 月球，按深度从远到近绘制
+  const bodies = [];
+  const ep = project(ORIGIN);
+  if (ep.visible) bodies.push({ name: '地球', proj: ep, r: (focal * EM.earthR) / ep.depth,
+    L: norm(sub(sunPos, ORIGIN)), src: EARTH.src, spin: emEarthSpin });
+  const mp = project(mPos);
+  if (mp.visible) bodies.push({ name: '月球', proj: mp, r: (focal * EM.moonR) / mp.depth,
+    L: norm(sub(sunPos, mPos)), src: MOON.src, spin: emMoonSpin });
+  bodies.sort((a, b) => b.proj.depth - a.proj.depth);
+  for (const b of bodies) {
+    drawSphere(b.src, b.proj, b.r, b.spin, b.L, false);
+    ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(b.name, b.proj.x + 1, b.proj.y - b.r - 5 + 1);
+    ctx.fillStyle = (b.name === '地球') ? '#bfe0ff' : '#dfe6f5';
+    ctx.fillText(b.name, b.proj.x, b.proj.y - b.r - 5);
+  }
+
+  // 顶部说明 + 当前月相
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = '600 15px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillText('地月系（示意比例：距离与大小为方便观察已压缩）', W / 2 + 1, 58 + 1);
+  ctx.fillStyle = '#cfe0ff';
+  ctx.fillText('地月系（示意比例：距离与大小为方便观察已压缩）', W / 2, 58);
+  const cap = '当前月相：' + phase + '（亮面约 ' + Math.round(illum * 100) + '%）';
+  ctx.font = '14px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillText(cap, W / 2 + 1, 82 + 1);
+  ctx.fillStyle = '#ffe08a';
+  ctx.fillText(cap, W / 2, 82);
+}
+
 /* ---------- 主渲染 ---------- */
 function render() {
   ctx.clearRect(0, 0, W, H);
@@ -975,6 +1071,7 @@ function render() {
     ctx.fillRect(q.x, q.y, 1.4, 1.4);
   }
   // 轨道
+  if (emMode) { drawEarthMoonScene(); return; }
   for (const p of PLANETS) drawOrbit(p);
   // 太阳 + 行星
   drawSun();
@@ -993,11 +1090,18 @@ function frame(now) {
   last = now;
   if (playing) {
     const eff = timeScale * SPEED_CALIB;   // 真实生效速度 = 显示值 × 1/3
-    for (const p of PLANETS) { p.angle += p.orbitSpeed * eff * dt; p.spin += p.spinSpeed * eff * dt; }
-    for (const a of ASTEROIDS) { a.angle += a.orbitSpeed * eff * dt; a.spin += a.spinSpeed * eff * dt; }
-    MOON.angle += MOON.orbitSpeed * eff * dt;
-    MOON.spin += MOON.spinSpeed * eff * dt;
     sunSpin += 0.4 * eff * dt;
+    if (emMode) {
+      // 地月系：地球自转 + 月球绕地球公转（示意节奏）；月球潮汐锁定（同一面朝向地球）
+      emEarthSpin += EM.earthSpinSpeed * eff * dt;
+      emMoonAngle += EM.moonOrbitSpeed * eff * dt;
+      emMoonSpin = emMoonAngle;
+    } else {
+      for (const p of PLANETS) { p.angle += p.orbitSpeed * eff * dt; p.spin += p.spinSpeed * eff * dt; }
+      for (const a of ASTEROIDS) { a.angle += a.orbitSpeed * eff * dt; a.spin += a.spinSpeed * eff * dt; }
+      MOON.angle += MOON.orbitSpeed * eff * dt;
+      MOON.spin += MOON.spinSpeed * eff * dt;
+    }
   }
   updateCamera();
   if (!detailOpen) render();
@@ -1049,7 +1153,22 @@ playBtn.addEventListener('click', () => {
 const speed = document.getElementById('speed');
 const speedVal = document.getElementById('speedVal');
 speed.addEventListener('input', () => { timeScale = parseFloat(speed.value); speedVal.textContent = timeScale.toFixed(1) + '×'; });
-document.getElementById('resetBtn').addEventListener('click', () => { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; });
+// 太阳系 / 地月系 切换
+function setViewMode(mode) {
+  emMode = (mode === 'earthmoon');
+  document.querySelectorAll('#viewModes button').forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
+  if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
+  else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
+  updateCamera();
+  if (!detailOpen) render();
+}
+document.querySelectorAll('#viewModes button').forEach((b) => {
+  b.addEventListener('click', () => setViewMode(b.dataset.view));
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
+  else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
+});
 
 /* ============================================================
    星球详情页：点击星球 -> 左侧信息 + 右侧可旋转 3D 建模
@@ -1077,6 +1196,16 @@ const DETAIL_LIGHT = norm({ x: -0.4, y: 0.35, z: 0.85 });  // 固定的"太阳"�
 function hitTestPlanet(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const mx = clientX - rect.left, my = clientY - rect.top;
+  if (emMode) {
+    const sp = project({ x: EM.sunDist, y: 0, z: 0 });
+    if (sp.visible && Math.hypot(mx - sp.x, my - sp.y) <= (focal * EM.sunR) / sp.depth + 8) return SUN;
+    const ep = project(ORIGIN);
+    if (ep.visible && Math.hypot(mx - ep.x, my - ep.y) <= (focal * EM.earthR) / ep.depth + 8) return EARTH;
+    const mPos = { x: EM.moonOrbitR * Math.cos(emMoonAngle), y: 0, z: EM.moonOrbitR * Math.sin(emMoonAngle) };
+    const mp = project(mPos);
+    if (mp.visible && Math.hypot(mx - mp.x, my - mp.y) <= (focal * EM.moonR) / mp.depth + 8) return MOON;
+    return null;
+  }
   const sp = project(ORIGIN);
   if (sp.visible) {
     const sr = (focal * SUN_R) / sp.depth;
