@@ -391,6 +391,14 @@ let sunSpin = 0;
 
 /* ---------- 地月系专题场景（示意比例）：把太阳 + 地球 + 月球单独拉出来 ---------- */
 let emMode = false;
+let eclMode = false;                  // 日食月食模拟模式
+let eclMoonA = Math.PI;               // 月球在轨道上的角度（π=新月，位于太阳一侧）
+let eclNode = 0;                      // 轨道交点（黄白交点）进动相位，用于演示「不是每月都有食」
+let eclAuto = true;                   // 月球是否自动公转
+let eclDrag = false;                  // 是否正在拖动月球
+let eclEarth = { x: 0, y: 0 };        // 地球在屏幕上的位置（供拖拽换算用）
+let eclMoonScreen = { x: 0, y: 0, r: 20 };  // 月球在屏幕上的位置 + 命中半径
+let eclStatus = 'none';                      // 'solar' | 'lunar' | 'none'
 let seenPhases = new Set(), seenPlanets = new Set();   // 成就追踪：看过的月相 / 看过的行星
 let emEarthSpin = 0, emMoonAngle = 0, emMoonSpin = 0;
 const EM = {
@@ -410,6 +418,12 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.18', date: '2026-07-10', type: 'minor', title: '日食月食模拟器', changes: [
+    '新增「日食月食」视图模式：2D 示意图展示太阳(左)、地球、月球与三者之间的影子',
+    '可拖动月球绕地球转：拖到地球和太阳之间→日食(月球影子投到地球)；拖到地球另一侧→月食(月球钻进地球影子，染成血月)',
+    '画出地球本影/半影影子锥、倾斜的月球轨道与黄白交点，并解释「为什么不是每个月都有食」',
+    '新增「🌓 食相观察员」成就：在模拟里亲眼看到一次日食或月食即可解锁',
+  ]},
   { ver: '2.17', date: '2026-07-10', type: 'minor', title: '太空旅行计算器 + 外星年龄', changes: [
     '详情页新增「🚀 去这颗星球旅行」：真实距太阳距离(AU/km) + 太阳光照时间 + 从地球坐火箭的霍曼转移时间(最省燃料飞法，与真实探测器吻合)',
     '详情页新增「🎂 你的外星年龄」：输入地球年龄，按各行星公转周期换算——水星上 10岁≈42岁，海王星上还不到 1 岁，月球上已过 134 个「月球年」',
@@ -1290,6 +1304,118 @@ function drawEarthMoonScene() {
   }
 }
 
+/* ---------- 日食月食模拟（2D 示意图，可拖动月球） ---------- */
+function drawBody2D(x, y, r, c1, c2) {
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+  g.addColorStop(0, c1);
+  g.addColorStop(1, c2);
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+}
+function drawEclipseScene() {
+  const m = Math.min(W, H);
+  const cx = W * 0.54, cy = H * 0.50;            // 地球在屏幕上的位置
+  eclEarth.x = cx; eclEarth.y = cy;
+  const Rm = Math.max(130, Math.min(340, m * 0.27));
+  const rE = Math.max(26, Math.min(46, m * 0.05));
+  const rM = Math.max(12, Math.min(22, rE * 0.46));
+  const tilt = 0.34;                              // 月球轨道视觉倾斜（约 5° 的示意）
+  const mx = cx + Rm * Math.cos(eclMoonA);
+  const my = cy + Rm * Math.sin(eclMoonA + eclNode) * tilt;
+  eclMoonScreen.x = mx; eclMoonScreen.y = my; eclMoonScreen.r = rM + 12;
+
+  // 太阳（左侧，部分在屏幕外）+ 从左向右的平行光
+  const sg = ctx.createRadialGradient(-W * 0.02, cy, 10, -W * 0.02, cy, W * 0.5);
+  sg.addColorStop(0, 'rgba(255,240,180,0.75)');
+  sg.addColorStop(0.25, 'rgba(255,200,90,0.40)');
+  sg.addColorStop(1, 'rgba(255,180,60,0)');
+  ctx.fillStyle = sg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = 'rgba(255,246,205,0.9)';
+  ctx.beginPath(); ctx.arc(-W * 0.04, cy, Math.max(30, W * 0.06), 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,235,170,0.16)'; ctx.lineWidth = 2;
+  for (let i = -3; i <= 3; i++) {
+    const yy = cy + i * (rE * 1.6);
+    ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(cx - rE, yy); ctx.stroke();
+  }
+
+  // 地球影子（半影宽 + 本影窄，向右延伸）
+  const suLen = Rm * 1.7, spLen = Rm * 1.5;
+  ctx.fillStyle = 'rgba(30,22,60,0.20)';
+  ctx.beginPath();
+  ctx.moveTo(cx + rE, cy - rE); ctx.lineTo(cx + spLen, cy - rE * 2.0);
+  ctx.lineTo(cx + spLen, cy + rE * 2.0); ctx.lineTo(cx + rE, cy + rE);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(10,6,30,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(cx + rE, cy - rE * 0.55); ctx.lineTo(cx + suLen, cy);
+  ctx.lineTo(cx + rE, cy + rE * 0.55);
+  ctx.closePath(); ctx.fill();
+
+  // 月球轨道（倾斜椭圆）+ 黄白交点
+  ctx.strokeStyle = 'rgba(150,170,220,0.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.ellipse(cx, cy, Rm, Rm * tilt, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(180,200,255,0.85)';
+  for (const nx of [cx - Rm, cx + Rm]) { ctx.beginPath(); ctx.arc(nx, cy, 3, 0, Math.PI * 2); ctx.fill(); }
+
+  // 判定食相
+  const onSunSide = mx < cx - Rm * 0.12;
+  const onFarSide = mx > cx + Rm * 0.12;
+  const aligned = Math.abs(my - cy) < rE * 0.95;
+  const solar = onSunSide && aligned;
+  const lunar = onFarSide && aligned;
+  eclStatus = solar ? 'solar' : (lunar ? 'lunar' : 'none');
+  if (solar || lunar) unlock('eclipse');
+
+  // 日食：月球的影子投到地球上
+  if (solar) {
+    ctx.fillStyle = 'rgba(10,6,30,0.5)';
+    const dx = cx - mx;
+    ctx.beginPath();
+    ctx.moveTo(mx + rM, my - rM * 0.5);
+    ctx.lineTo(mx + dx, cy);
+    ctx.lineTo(mx + rM, my + rM * 0.5);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // 地球 + 地表观测者（日食时高亮）
+  drawBody2D(cx, cy, rE, '#3a7bd5', '#0b1d3a');
+  if (solar) { ctx.fillStyle = '#ff5a5a'; ctx.beginPath(); ctx.arc(cx + rE * 0.2, cy - rE * 0.3, 4, 0, Math.PI * 2); ctx.fill(); }
+
+  // 月球（月食时染红 → 血月）
+  const moonCol1 = lunar ? '#ff8a6a' : '#e9e9ee';
+  const moonCol2 = lunar ? '#7a1d10' : '#7c7c8c';
+  drawBody2D(mx, my, rM, moonCol1, moonCol2);
+
+  // 标签
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#ffd98a'; ctx.fillText('☀ 太阳', Math.max(46, W * 0.07), cy - rE - 16);
+  ctx.fillStyle = '#bcd4ff'; ctx.fillText('🌍 地球', cx, cy + rE + 18);
+  ctx.fillStyle = lunar ? '#ff9a7a' : '#dfe3ee'; ctx.fillText('🌑 月球', mx, my - rM - 16);
+
+  // 顶部状态
+  let title, color, sub;
+  if (solar) { title = '🌑 日食！月球挡住了太阳光'; color = '#ffd166'; sub = '月球跑到地球和太阳之间，把影子投在地球上 —— 站在影子里的人就看到了日食'; }
+  else if (lunar) { title = '🌕 月食！月球钻进地球影子里'; color = '#ff9a7a'; sub = '满月时月球正好转到地球背阳的影子中，被地球影子染红（血月）'; }
+  else { title = '暂无食：月球在侧面'; color = '#9fb0d8'; sub = '把月球拖到地球和太阳之间（或地球另一侧、且贴近中间黄线），就会发生日食 / 月食'; }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.font = '600 18px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(title, W / 2 + 1, 56 + 1);
+  ctx.fillStyle = color; ctx.fillText(title, W / 2, 56);
+  ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(205,216,255,0.95)'; ctx.fillText(sub, W / 2, 84);
+
+  // 底部小知识
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.font = '12.5px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = 'rgba(170,185,225,0.8)';
+  ctx.fillText('小知识：月球轨道相对地球公转轨道倾斜约 5°，多数时候新月/满月时月球从地球影子的上方或下方掠过，所以不是每个月都有食。', W / 2, H - 14);
+}
+
 /* ---------- 偶发流星（增加趣味） ---------- */
 let meteors = [];
 function spawnMeteor() {
@@ -1337,6 +1463,8 @@ function render() {
   drawMeteors();
   // 小彩蛋：飞碟
   drawUfo();
+  // 日食月食模拟（2D 示意图，优先级高于地月系）
+  if (eclMode) { drawEclipseScene(); return; }
   // 轨道
   if (emMode) { drawEarthMoonScene(); return; }
   for (const p of PLANETS) drawOrbit(p);
@@ -1360,6 +1488,10 @@ function frame(now) {
   gdt = dt;
   if (playing) {
     const eff = timeScale * SPEED_CALIB;   // 真实生效速度 = 显示值 × 1/3
+    if (eclMode) {
+      // 日食月食模拟：月球公转 + 交点缓慢进动（演示食的周期性）
+      if (!eclDrag && eclAuto) { eclMoonA -= 0.5 * eff * dt; eclNode += 0.10 * eff * dt; }
+    }
     sunSpin += 0.4 * eff * dt;
     if (emMode) {
       // 地月系：地球自转 + 月球绕地球公转（示意节奏）；月球潮汐锁定（同一面朝向地球）
@@ -1390,8 +1522,28 @@ canvas.addEventListener('wheel', (e) => {
 
 let dragging = false, lx = 0, ly = 0;
 let dragMode = 'rotate';   // 'rotate' = 旋转视角；'pan' = 拖动平移
-canvas.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerdown', (e) => {
+  if (eclMode) {
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const d = Math.hypot(px - eclMoonScreen.x, py - eclMoonScreen.y);
+    if (d <= eclMoonScreen.r + 16) {            // 抓到月球 → 进入拖动
+      eclDrag = true; eclAuto = false; eclNode = 0;
+      eclMoonA = Math.atan2((py - eclEarth.y) / 0.34, (px - eclEarth.x));
+      canvas.setPointerCapture(e.pointerId);
+      return;
+    }
+    return;                                       // 日食模式不旋转相机
+  }
+  dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId);
+});
 canvas.addEventListener('pointermove', (e) => {
+  if (eclMode && eclDrag) {
+    const rect = canvas.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    eclMoonA = Math.atan2((py - eclEarth.y) / 0.34, (px - eclEarth.x));
+    return;
+  }
   if (!dragging) return;
   const dx = e.clientX - lx, dy = e.clientY - ly;
   if (dragMode === 'pan') {
@@ -1407,8 +1559,14 @@ canvas.addEventListener('pointermove', (e) => {
   }
   lx = e.clientX; ly = e.clientY;
 });
-canvas.addEventListener('pointerup', (e) => { dragging = false; });
-canvas.addEventListener('pointercancel', () => { dragging = false; });
+canvas.addEventListener('pointerup', (e) => {
+  if (eclMode) { eclDrag = false; eclAuto = true; return; }   // 松手后月球恢复自动公转
+  dragging = false;
+});
+canvas.addEventListener('pointercancel', () => {
+  if (eclMode) { eclDrag = false; eclAuto = true; return; }
+  dragging = false;
+});
 
 // 拖动模式切换：旋转视角 / 拖动平移
 document.querySelectorAll('#modes button').forEach((b) => {
@@ -1429,9 +1587,12 @@ speed.addEventListener('input', () => { timeScale = parseFloat(speed.value); spe
 // 太阳系 / 地月系 切换
 function setViewMode(mode) {
   emMode = (mode === 'earthmoon');
+  eclMode = (mode === 'eclipse');
   if (emMode) unlock('earthmoon');
+  if (eclMode) { eclMoonA = Math.PI; eclNode = 0; eclAuto = true; eclDrag = false; }   // 进入时重置到新月位置
   document.querySelectorAll('#viewModes button').forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
   if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
+  else if (eclMode) { camYaw = 0.6; camPitch = 0.5; camDist = 1500; }
   else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
   updateCamera();
   if (!detailOpen) render();
@@ -1483,6 +1644,7 @@ const ACHIEVEMENTS = [
   { id: 'phases',     ic: '🌗', name: '月相大师',     desc: '在地月系里看全 8 种月相' },
   { id: 'zoom',       ic: '🔍', name: '凑近观察',     desc: '把镜头拉近，仔细看一颗星球' },
   { id: 'changelog',  ic: '📜', name: '更新日志读者', desc: '打开过「更新日志」看看成长记录' },
+  { id: 'eclipse',    ic: '🌓', name: '食相观察员',   desc: '在模拟里亲眼看到过一次日食或月食' },
 ];
 const ACH_BY_ID = {}; ACHIEVEMENTS.forEach(a => ACH_BY_ID[a.id] = a);
 function loadAch() { try { return JSON.parse(localStorage.getItem('solar_ach') || '[]'); } catch (e) { return []; } }
