@@ -1119,7 +1119,7 @@ function frame(now) {
     if (emMode) {
       // 地月系：地球自转 + 月球绕地球公转（示意节奏）；月球潮汐锁定（同一面朝向地球）
       emEarthSpin += EM.earthSpinSpeed * eff * dt;
-      emMoonAngle += EM.moonOrbitSpeed * eff * dt;
+      emMoonAngle -= EM.moonOrbitSpeed * eff * dt;   // 月球公转方向与行星一致（自北向南看为逆时针）
       emMoonSpin = emMoonAngle;
     } else {
       for (const p of PLANETS) { p.angle += p.orbitSpeed * eff * dt; p.spin += p.spinSpeed * eff * dt; }
