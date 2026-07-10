@@ -44,6 +44,13 @@ const EARTH_KM = 6371;
 const ORBIT_ACCEL = 30.4;        // 公转整体加速：地球约 12 秒/圈（保持相对快慢）
 const SPIN_ACCEL = 8.0;          // 自转整体加速（⚠️ 待定项）
 
+// 各天体表面重力（相对地球 = 1，真实天文数据），用于详情页「体重体验」小工具
+const SURFACE_G = {
+  '水星': 0.38, '金星': 0.90, '地球': 1.00, '火星': 0.38,
+  '木星': 2.53, '土星': 1.07, '天王星': 0.89, '海王星': 1.14,
+  '太阳': 27.9, '月球': 0.166, '小行星带': null,
+};
+
 const PLANETS = [
   { name: '水星', au: 0.39,  period: 87.97,    rot: 1407.6,  km: 2440,   color: '#9c8e80', spinDir:  1,
     tagline: '离太阳最近的「小火炉」，一天竟比一年还长',
@@ -402,6 +409,10 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.11', date: '2026-07-10', type: 'minor', title: '体重体验 + 月相周期条', changes: [
+    '详情页新增「💪 你的体重在这里」小工具：输入体重即实时算出在该天体表面的体重（基于真实表面重力），并用孩子能懂的话解释轻重感受',
+    '地月系模式新增「月相周期」8 相名称条（新月/蛾眉/上弦/盈凸/满月/亏凸/下弦/残月），实时高亮当前所在月相，帮孩子建立完整月相周期概念',
+  ]},
   { ver: '2.10', date: '2026-07-10', type: 'minor', title: '土星环卡通化重做', changes: [
     '参考卡通土星风格，弃用脏噪声纹理，改用干净平滑的暖金环带（明亮 B 环 + 清晰卡西尼缝 + A 环 + 恩克缝）',
     '主场景与详情页统一画法：倾斜椭圆「还原成圆」+ 环形裁剪 + 径向渐变实心填充，彻底消除网格 / 框线 / 发糊',
@@ -1122,6 +1133,17 @@ function drawMoonPhaseDisk(cx, cy, R, illum, litOnRight) {
   ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
 }
+// 圆角矩形路径
+function rr(c, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
 function drawEarthMoonScene() {
   const sunPos = { x: EM.sunDist, y: 0, z: 0 };
   // 月球位置（地球在原点）
@@ -1198,6 +1220,34 @@ function drawEarthMoonScene() {
   const litOnRight = (ang >= 0 && ang < 180);
   const diskR = 15, diskX = W / 2 + ctx.measureText(cap).width / 2 + 24, diskY = capY;
   drawMoonPhaseDisk(diskX, diskY, diskR, illum, litOnRight);
+
+  // 月相周期 8 相名称条（实时高亮当前所在相）
+  const PH = [
+    ['新月', '新月'], ['蛾眉月（盈）', '蛾眉'], ['上弦月', '上弦'], ['盈凸月', '盈凸'],
+    ['满月', '满月'], ['亏凸月', '亏凸'], ['下弦月', '下弦'], ['残月', '残月'],
+  ];
+  const curIdx = PH.findIndex(x => x[0] === phase);
+  const gap = 6, n = PH.length;
+  const maxW = Math.min(W - 24, 560);
+  const chipW = Math.max(38, (maxW - (n - 1) * gap) / n);
+  const chipH = 26;
+  const totalW = n * chipW + (n - 1) * gap;
+  const sx = W / 2 - totalW / 2, sy = H - 44;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '12.5px "PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.fillStyle = '#9fb0d8';
+  ctx.fillText('月相周期（当前高亮）', W / 2, sy - 18);
+  for (let i = 0; i < n; i++) {
+    const x = sx + i * (chipW + gap);
+    const on = i === curIdx;
+    rr(ctx, x, sy, chipW, chipH, 8);
+    ctx.fillStyle = on ? '#ffd166' : 'rgba(20,28,56,0.85)';
+    ctx.fill();
+    ctx.strokeStyle = on ? '#ffd166' : 'rgba(90,110,160,0.5)'; ctx.lineWidth = 1;
+    rr(ctx, x, sy, chipW, chipH, 8); ctx.stroke();
+    ctx.fillStyle = on ? '#1a1300' : '#cdd8ff';
+    ctx.fillText(PH[i][1], x + chipW / 2, sy + chipH / 2 + 0.5);
+  }
 }
 
 /* ---------- 主渲染 ---------- */
@@ -1430,6 +1480,28 @@ function fillDetailInfo(p) {
   document.getElementById('d-explain').textContent = p.childExplain || '';
   document.getElementById('d-stats').innerHTML = (p.stats || []).map(s => `<li>${s}</li>`).join('');
   document.getElementById('d-facts').innerHTML = (p.facts || []).map(f => `<li>${f}</li>`).join('');
+  // 体重体验小工具：基于真实表面重力实时换算
+  const gEl = document.getElementById('d-gravity');
+  const gRes = document.getElementById('d-gresult');
+  const gInput = document.getElementById('d-weight');
+  const g = SURFACE_G[p.name];
+  if (typeof g === 'number' && gEl && gRes && gInput) {
+    gEl.style.display = '';
+    const calc = () => {
+      const w = parseFloat(gInput.value);
+      if (!isFinite(w) || w <= 0) { gRes.textContent = '请输入有效体重～'; return; }
+      const onBody = w * g;
+      let extra = '';
+      if (g >= 2) extra = '（比地球上重好多，轻轻一跳都很费力！）';
+      else if (g <= 0.4) extra = '（比地球上轻很多，一蹦就能跳得老高！）';
+      const where = (p.name === '太阳') ? '太阳表面（如果能站在炽热气体上）' : (p.name + '表面');
+      gRes.innerHTML = `站在 <b>${where}</b>，你约 <b>${onBody.toFixed(1)}</b> 公斤 ${extra}`;
+    };
+    gInput.oninput = calc;
+    calc();
+  } else if (gEl) {
+    gEl.style.display = 'none';
+  }
   const note = document.getElementById('d-model-note');
   if (note) note.textContent = p.modelNote || '';
   const hint = document.getElementById('d-hint3d');

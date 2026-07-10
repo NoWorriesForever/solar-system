@@ -69,6 +69,17 @@
     background: rgba(16,22,44,.6); border: 1px solid #243156; border-radius: 14px; padding: 14px 16px;
   }
   #detail .stats li { font-size: 13.5px; color: #cdd8ff; line-height: 1.5; }
+  #detail .gravity {
+    background: rgba(255,209,102,.10); border: 1px solid #4a3f1e; border-radius: 14px; padding: 12px 14px; margin-top: 12px;
+  }
+  #detail .gravity-title { font-size: 14.5px; color: #ffd166; font-weight: 600; margin-bottom: 9px; }
+  #detail .gravity-row { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #e7edff; }
+  #detail .gravity-row input {
+    width: 74px; background: #0f1733; color: #fff; border: 1px solid #2a3766; border-radius: 9px;
+    padding: 7px 9px; font-size: 14px; font-family: inherit;
+  }
+  #detail .g-result { font-size: 14.5px; line-height: 1.6; color: #ffe9b0; margin-top: 9px; }
+  #detail .g-result b { color: #fff; font-size: 17px; }
   #detail .facts-title { font-size: 15px; color: #9fb0d8; margin: 4px 0 -4px; }
   #detail .facts { list-style: none; display: flex; flex-direction: column; gap: 10px; }
   #detail .facts li { font-size: 14.5px; line-height: 1.7; color: #e7edff; padding-left: 20px; position: relative; }
@@ -192,6 +203,14 @@
       <h2 id="d-name">星球</h2>
       <div class="tag" id="d-tag"></div>
       <ul class="stats" id="d-stats"></ul>
+      <div class="gravity" id="d-gravity">
+        <div class="gravity-title">💪 你的体重在这里</div>
+        <div class="gravity-row">
+          <label for="d-weight">我的体重</label>
+          <input type="number" id="d-weight" value="30" min="1" max="500" /> <span>公斤</span>
+        </div>
+        <div class="g-result" id="d-gresult"></div>
+      </div>
       <div class="facts-title">趣味小知识</div>
       <ul class="facts" id="d-facts"></ul>
       <div class="explain" id="d-explain"></div>
