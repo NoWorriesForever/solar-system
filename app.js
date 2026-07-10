@@ -322,7 +322,7 @@ const ASTEROIDS = [];
     ASTEROIDS.push({
       au, orbit: ORBIT_K * Math.pow(au, ORBIT_EXP),
       angle: Math.random() * Math.PI * 2,
-      orbitSpeed: (2 * Math.PI / Math.pow(au, 1.5)) * ORBIT_ACCEL * 0.32, // 整体放慢，避免"高速旋转"
+      orbitSpeed: (2 * Math.PI / Math.pow(au, 1.5)) * ORBIT_ACCEL * 0.032, // 公转速度降到原 1/10，缓慢漂移更接近真实小行星带
       visualR: 0.5 + Math.random() * 0.6,
       spin: Math.random() * Math.PI * 2,
       spinSpeed: (0.06 + Math.random() * 0.18) * (Math.random() < 0.5 ? -1 : 1),
@@ -505,7 +505,7 @@ function drawSaturnRing(pos, centerDepth, visualR) {
     // 前向散射：朝太阳一侧(along<0)的环更亮、偏白（真实土星环满相时发白增亮）
     const sun = -along;
     const fwd = Math.max(0, Math.min(1, (sun - 0.35) / 0.65));
-    const k = shade * (1 + 0.40 * fwd);
+    const k = shade * (1.18 + 0.42 * fwd);           // 整体提亮，解决"环很暗"
     const wMix = fwd * 0.32;
     const grad = ctx.createRadialGradient(sp.x, sp.y, rinS, sp.x, sp.y, routS);
     for (let s = 0; s <= N; s++) {
@@ -517,8 +517,8 @@ function drawSaturnRing(pos, centerDepth, visualR) {
       let g = ringGrad ? ringGrad.g[idx] : 198;
       let b = ringGrad ? ringGrad.b[idx] : 160;
       r = r + (255 - r) * wMix; g = g + (248 - g) * wMix; b = b + (232 - b) * wMix;  // 白化高光
-      r *= k; g *= k; b *= k;
-      grad.addColorStop(t, `rgba(${r | 0},${g | 0},${b | 0},${Math.min(1, a * 1.25)})`);
+      r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
+      grad.addColorStop(t, `rgba(${r | 0},${g | 0},${b | 0},${Math.min(1, a * 1.55)})`);  // 提高不透明度，环更清晰明亮
     }
     (mid.depth < centerDepth ? back : front).push({ q, grad });
   }
@@ -1392,55 +1392,60 @@ function checkAllDone() {
 // 详情页土星环：与主场景一致——环在真实赤道面、按 SATURN_TILT+用户视角倾斜，并投射土星本影
 // which: 'back' 画背向相机的一半(星球之前)；'front' 画朝向相机的一半(星球之后)
 function drawDetailRing(rScreen, cx, cy, tilt, which) {
+  // 画法：一圈圈"同心椭圆环带"（描边），半径方向的颜色来自 ringGrad，方位方向的明暗
+  // 由横向线性渐变的描边样式实现。由于每一环都是完整平滑的椭圆弧，既无角向拼缝(竖直网格)、
+  // 也无径向色阶断层(横向网格)，从根本上消除"网格状"，得到连续柔和的真实土星环。
   const rin = rScreen * 1.3, rout = rScreen * 2.4;
-  const SEG = 160;                                  // 角向切片：仅用于按角度切出扇形，颜色本身连续无网格
-  const ct = Math.cos(tilt), st = Math.sin(tilt);
-  const L = DETAIL_LIGHT;                           // 详情页太阳方向（来自 DETAIL_LIGHT）
-  const dA = Math.PI * 2 / SEG;
-  const ov = dA * 0.6;                              // 轻微角向重叠，覆盖抗锯齿边
-  const N = 96;                                     // 径向渐变采样数（连续着色，消除分带网格，足够表现细密环纹）
-  for (let i = 0; i < SEG; i++) {
-    const a0 = i * dA, a1 = (i + 1) * dA, m0 = (a0 + a1) / 2;
-    const dx = Math.cos(m0), dy = -Math.sin(m0) * st, dz = Math.sin(m0) * ct;
-    const along = dx * L.x + dy * L.y + dz * L.z;   // d·L：朝向太阳为正
-    const perp = Math.sqrt(Math.max(0, 1 - along * along)); // |d×L| ∈[0,1]
-    // 土星本影：背阳侧(along<0)且到阴影轴距离 ρ·perp < 土星半径 rScreen 的环带被遮挡 → 楔形暗带
-    const rhoC = (along < 0 && perp > 1e-3) ? rScreen / perp : -1;
-    const fwd = Math.max(0, Math.min(1, (along - 0.35) / 0.65));   // 前向散射强度：满相(正对太阳)最强
-    const lit = (0.80 + 0.20 * Math.max(0, along)) * (1 + 0.30 * fwd);  // 受光立体感 + 满相增亮
-    const wMix = fwd * 0.30;                          // 满相时向白色混合 → 发白的高光，真实且美丽
-    // 该扇形的径向渐变：颜色只依赖半径；相邻扇形边界颜色完全一致 → 拼接无缝，无网格
-    const grad = dctx.createRadialGradient(cx, cy, rin, cx, cy, rout);
-    for (let s = 0; s <= N; s++) {
-      const t = s / N, rm = rin + (rout - rin) * t;
-      const idx = Math.max(0, Math.min(255, Math.floor(t * 255)));
-      const a = ringGrad ? ringGrad.a[idx] : 0.5;
-      if (a < 0.02) { grad.addColorStop(t, 'rgba(0,0,0,0)'); continue; }   // 卡西尼缝等透明带
-      const r0 = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
-      let r = r0 + (255 - r0) * wMix, g = g0 + (248 - g0) * wMix, b = b0 + (232 - b0) * wMix;  // 白化高光
+  const stR = Math.sin(tilt), ct = Math.cos(tilt);
+  const st = Math.max(0.06, Math.abs(stR));          // 椭圆压扁比（避免完全侧视时塌成一条线）
+  const L = DETAIL_LIGHT;                             // 详情页太阳方向
+  // 光照在环平面内的分解：along(φ)=A·cosφ + B·sinφ，φ 即环上方位角
+  const A = L.x, B = -st * L.y + ct * L.z;
+  const N = 180;                                      // 同心椭圆环数量（足够密 → 连续无缝）
+  const STOPS = 22;                                   // 每环横向渐变采样数（方位向平滑明暗）
+  const halfBack = (which === 'back');                // 后半=椭圆上半(背向相机)，前半=下半
+  const phi0 = halfBack ? Math.PI : 0, phi1 = halfBack ? Math.PI * 2 : Math.PI;
+  const sgn = halfBack ? -1 : 1;                      // 该半弧上 sinφ 的符号
+  dctx.save();
+  dctx.lineCap = 'butt';
+  dctx.lineWidth = (rout - rin) / N + 1.6;           // 每环略宽于间距 → 彼此叠盖，无横向缝
+  for (let s = 0; s < N; s++) {
+    const t = s / (N - 1);
+    const rm = rin + (rout - rin) * t;
+    const idx = Math.max(0, Math.min(255, Math.round(t * 255)));
+    const a = ringGrad ? ringGrad.a[idx] : 0.5;
+    if (a < 0.02) continue;                           // 卡西尼缝等透明带：留空 → 天然的暗缝
+    const r0 = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
+    const rmS = rm, rmY = rm * st;
+    // 横向线性渐变承载方位向明暗（受光/前向散射/本影），颜色随 x 平滑变化 → 无竖直网格
+    const grad = dctx.createLinearGradient(cx - rmS, cy, cx + rmS, cy);
+    for (let q = 0; q <= STOPS; q++) {
+      const p = q / STOPS;
+      const cphi = -1 + 2 * p;                        // cosφ 从 -1 到 1
+      const sphi = sgn * Math.sqrt(Math.max(0, 1 - cphi * cphi));
+      const along = A * cphi + B * sphi;              // 朝太阳为正
+      const perp = Math.sqrt(Math.max(0, 1 - along * along));
+      const fwd = Math.max(0, Math.min(1, (along - 0.35) / 0.65));    // 前向散射（满相最强）
+      const lit = (0.86 + 0.20 * Math.max(0, along)) * (1 + 0.32 * fwd);
+      const wMix = fwd * 0.30;                        // 满相向白色混合 → 发白高光
+      // 土星本影：背阳侧且到阴影轴距离 rm·perp < 土星半径 → 落在暗带内
       let occ = 0;
-      if (rhoC > 0) { const w = (rout - rin) * 0.08 + 2; occ = 1 - Math.max(0, Math.min(1, (rm - (rhoC - w)) / (2 * w))); }
-      const k = lit * (1 - 0.6 * occ);              // 叠本影（不压黑到消失）
-      grad.addColorStop(t, `rgba(${(r * k) | 0},${(g * k) | 0},${(b * k) | 0},${Math.min(1, a * 1.3)})`);
+      if (along < 0 && perp > 1e-3) {
+        const rhoC = rScreen / perp, wdt = (rout - rin) * 0.10 + 3;
+        occ = 1 - Math.max(0, Math.min(1, Math.abs(rm - rhoC) / wdt));
+      }
+      const k = lit * (1 - 0.55 * occ);
+      let r = (r0 + (255 - r0) * wMix) * k;
+      let g = (g0 + (248 - g0) * wMix) * k;
+      let b = (b0 + (232 - b0) * wMix) * k;
+      grad.addColorStop(p, `rgba(${Math.min(255, r) | 0},${Math.min(255, g) | 0},${Math.min(255, b) | 0},${Math.min(1, a * 1.4)})`);
     }
-    // 扇形环面 path（含角向重叠），投影到屏幕
-    const aS = a0 - ov, aE = a1 + ov, steps = 6;
-    const pts = [];
-    for (let k = 0; k <= steps; k++) { const ang = aS + (aE - aS) * k / steps; pts.push([rin, ang]); }
-    for (let k = steps; k >= 0; k--) { const ang = aS + (aE - aS) * k / steps; pts.push([rout, ang]); }
-    const sc = pts.map(([r, ang]) => {
-      const wx = r * Math.cos(ang), wy = -r * Math.sin(ang) * st, wz = r * Math.sin(ang) * ct;
-      return { x: cx + wx, y: cy - wy, z: wz };
-    });
-    const zMid = (sc[0].z + sc[sc.length - 1].z) / 2;
-    if (which === 'back' && zMid > 0) continue;     // 后半：只画背向相机(z<0)
-    if (which === 'front' && zMid <= 0) continue;   // 前半：只画朝向相机(z>0)
-    dctx.fillStyle = grad;
+    dctx.strokeStyle = grad;
     dctx.beginPath();
-    dctx.moveTo(sc[0].x, sc[0].y);
-    for (let k = 1; k < sc.length; k++) dctx.lineTo(sc[k].x, sc[k].y);
-    dctx.closePath(); dctx.fill();
+    dctx.ellipse(cx, cy, rmS, rmY, 0, phi0, phi1);    // 上半/下半弧，天然分离前后环
+    dctx.stroke();
   }
+  dctx.restore();
 }
 function drawDetail() {
   const w = detailCanvas.clientWidth, h = detailCanvas.clientHeight;
