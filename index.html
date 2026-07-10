@@ -165,6 +165,19 @@
   #changelog .cl-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
   #changelog .cl-list li { font-size: 13.5px; line-height: 1.65; color: #cdd8ff; padding-left: 18px; position: relative; }
   #changelog .cl-list li::before { content: "•"; position: absolute; left: 4px; color: #5b8cff; }
+
+  /* 成就系统 */
+  #achToast { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+  .ach-toast { background: rgba(18,26,54,.96); border: 1px solid #ffd166; border-radius: 12px; padding: 10px 16px; color: #ffe9b0; font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); white-space: nowrap; animation: achPop .4s ease, achFade .5s ease 2.6s forwards; }
+  @keyframes achPop { from { transform: translateY(-12px) scale(.92); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes achFade { to { opacity: 0; transform: translateY(-10px); } }
+  .ach-prog { text-align: center; color: #ffd166; font-size: 13px; margin: 4px 0 14px; }
+  .ach-item { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border-radius: 12px; background: rgba(16,22,44,.6); border: 1px solid #243156; margin-bottom: 8px; }
+  .ach-item.locked { opacity: .5; }
+  .ach-ic { font-size: 26px; width: 34px; text-align: center; flex: 0 0 auto; }
+  .ach-name { font-size: 14.5px; font-weight: 600; color: #fff; }
+  .ach-item.locked .ach-name { color: #9fb0d8; }
+  .ach-desc { font-size: 12.5px; color: #cdd8ff; margin-top: 2px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -191,6 +204,7 @@
       <span class="val" id="speedVal">1.0×</span>
     </div>
     <button id="resetBtn">↺ 复位视角</button>
+    <button id="achBtn">🏅 成就</button>
     <button id="changelogBtn">📋 更新日志</button>
   </div>
 
@@ -237,6 +251,19 @@
       <div class="cl-body" id="clBody"></div>
     </div>
   </div>
+
+  <!-- 成就徽章弹窗 -->
+  <div id="achievements" class="hidden">
+    <div class="cl-backdrop" id="achBackdrop"></div>
+    <div class="cl-panel">
+      <div class="cl-head">
+        <h2>🏅 成就徽章</h2>
+        <button class="cl-close" id="achClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="cl-body" id="achBody"></div>
+    </div>
+  </div>
+  <div id="achToast"></div>
 
   <script src="bennu_model.js"></script>
   <script src="app.js"></script>

@@ -391,6 +391,7 @@ let sunSpin = 0;
 
 /* ---------- 地月系专题场景（示意比例）：把太阳 + 地球 + 月球单独拉出来 ---------- */
 let emMode = false;
+let seenPhases = new Set(), seenPlanets = new Set();   // 成就追踪：看过的月相 / 看过的行星
 let emEarthSpin = 0, emMoonAngle = 0, emMoonSpin = 0;
 const EM = {
   earthR: 26,            // 地球显示半径（示意，非真实比例）
@@ -409,6 +410,11 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.13', date: '2026-07-10', type: 'minor', title: '成就徽章系统', changes: [
+    '新增「🏅 成就」按钮与成就面板：10 个面向探索的徽章（初来乍到 / 地月探索者 / 环游太阳系 / 陨石猎人 / 小小称重员 / 答题小能手 / 追星人 / 月相大师 / 凑近观察 / 更新日志读者）',
+    '达成条件自动触发：看完全部行星、点小行星带、算一次体重、答对测验、看到流星、集齐 8 月相等都会弹出解锁提示',
+    '成就用 localStorage 本地保存，刷新/重开不丢失；面板实时显示「已解锁 X/10」',
+  ]},
   { ver: '2.12', date: '2026-07-10', type: 'minor', title: '月相条改到顶部 + 偶发流星', changes: [
     '修复：地月系「月相周期 8 相条」原本贴在屏幕底部，被含“速度”滑块的控制面板挡住中间几个相；现移到顶部信息区（标题与“当前月相”下方），更醒目且不再被遮挡',
     '新增：星空背景下偶发流星划过（平均约每 3 秒一颗、自动淡出），让页面更有活力与趣味',
@@ -1158,6 +1164,7 @@ function drawEarthMoonScene() {
   const ang = (-emMoonAngle) * 180 / Math.PI;
   const illum = (1 - Math.cos(ang * Math.PI / 180)) / 2;
   const phase = emPhaseName(ang);
+  seenPhases.add(phase); if (seenPhases.size >= 8) unlock('phases');
 
   // 月球公转轨道（淡虚线，帮助理解"月球绕着地球转"）
   ctx.save();
@@ -1266,6 +1273,7 @@ function spawnMeteor() {
   const ang = Math.PI / 4 + (Math.random() - 0.5) * 0.5;
   const sp = 380 + Math.random() * 260;
   meteors.push({ x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.9 + Math.random() * 0.5, len: 70 + Math.random() * 60 });
+  unlock('meteor');
 }
 function updateMeteors(dt) {
   if (playing && Math.random() < dt * 0.35 && meteors.length < 4) spawnMeteor(); // 平均约每 3 秒一颗
@@ -1345,6 +1353,7 @@ canvas.addEventListener('wheel', (e) => {
   e.preventDefault();
   camDist *= 1 + e.deltaY * 0.0012;
   camDist = Math.max(30, Math.min(6000, camDist));
+  if (camDist < 160) unlock('zoom');
 }, { passive: false });
 
 let dragging = false, lx = 0, ly = 0;
@@ -1388,6 +1397,7 @@ speed.addEventListener('input', () => { timeScale = parseFloat(speed.value); spe
 // 太阳系 / 地月系 切换
 function setViewMode(mode) {
   emMode = (mode === 'earthmoon');
+  if (emMode) unlock('earthmoon');
   document.querySelectorAll('#viewModes button').forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
   if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
   else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
@@ -1422,12 +1432,64 @@ function renderChangelog() {
     </div>`;
   }).join('');
 }
-function openChangelog() { renderChangelog(); clEl.classList.remove('hidden'); }
+function openChangelog() { unlock('changelog'); renderChangelog(); clEl.classList.remove('hidden'); }
 function closeChangelog() { clEl.classList.add('hidden'); }
 clBtn.addEventListener('click', openChangelog);
 document.getElementById('clClose').addEventListener('click', closeChangelog);
 document.getElementById('clBackdrop').addEventListener('click', closeChangelog);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeChangelog(); });
+
+/* ---------- 成就系统（本地保存，刷新不丢） ---------- */
+const ACHIEVEMENTS = [
+  { id: 'welcome',    ic: '🌟', name: '初来乍到',     desc: '打开了太阳系 3D 演示' },
+  { id: 'earthmoon',  ic: '🌍', name: '地月探索者',   desc: '切换到「地月系」，认识地球和月亮' },
+  { id: 'allplanets', ic: '🪐', name: '环游太阳系',   desc: '查看过全部 8 颗大行星的详情' },
+  { id: 'asteroid',   ic: '🪨', name: '陨石猎人',     desc: '点开小行星带，看看太空碎石场' },
+  { id: 'weight',     ic: '💪', name: '小小称重员',   desc: '在详情页用「体重体验」算过自己的体重' },
+  { id: 'quiz',       ic: '🧠', name: '答题小能手',   desc: '在详情页的小测验里答对过一道题' },
+  { id: 'meteor',     ic: '☄️', name: '追星人',       desc: '看到一颗流星划过夜空' },
+  { id: 'phases',     ic: '🌗', name: '月相大师',     desc: '在地月系里看全 8 种月相' },
+  { id: 'zoom',       ic: '🔍', name: '凑近观察',     desc: '把镜头拉近，仔细看一颗星球' },
+  { id: 'changelog',  ic: '📜', name: '更新日志读者', desc: '打开过「更新日志」看看成长记录' },
+];
+const ACH_BY_ID = {}; ACHIEVEMENTS.forEach(a => ACH_BY_ID[a.id] = a);
+function loadAch() { try { return JSON.parse(localStorage.getItem('solar_ach') || '[]'); } catch (e) { return []; } }
+function saveAch() { try { localStorage.setItem('solar_ach', JSON.stringify([...achUnlocked])); } catch (e) {} }
+let achUnlocked = new Set(loadAch());
+function unlock(id) {
+  if (achUnlocked.has(id)) return;
+  achUnlocked.add(id); saveAch();
+  const a = ACH_BY_ID[id];
+  if (a) showAchToast(a);
+  updateAchBtn();
+}
+function showAchToast(a) {
+  const c = document.getElementById('achToast'); if (!c) return;
+  const d = document.createElement('div'); d.className = 'ach-toast';
+  d.textContent = '🏅 解锁成就：' + a.ic + ' ' + a.name;
+  c.appendChild(d); setTimeout(() => d.remove(), 3200);
+}
+function updateAchBtn() {
+  const b = document.getElementById('achBtn');
+  if (b) b.textContent = '🏅 成就 ' + achUnlocked.size + '/' + ACHIEVEMENTS.length;
+}
+function renderAchievements() {
+  const body = document.getElementById('achBody'); if (!body) return;
+  body.innerHTML = '<div class="ach-prog">已解锁 ' + achUnlocked.size + ' / ' + ACHIEVEMENTS.length + '</div>' +
+    ACHIEVEMENTS.map(a => {
+      const on = achUnlocked.has(a.id);
+      return '<div class="ach-item' + (on ? '' : ' locked') + '"><div class="ach-ic">' + (on ? a.ic : '🔒') +
+        '</div><div><div class="ach-name">' + a.name + '</div><div class="ach-desc">' + a.desc + '</div></div></div>';
+    }).join('');
+}
+const achEl = document.getElementById('achievements');
+function openAchievements() { renderAchievements(); achEl.classList.remove('hidden'); }
+function closeAchievements() { achEl.classList.add('hidden'); }
+document.getElementById('achBtn').addEventListener('click', openAchievements);
+document.getElementById('achClose').addEventListener('click', closeAchievements);
+document.getElementById('achBackdrop').addEventListener('click', closeAchievements);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAchievements(); });
+updateAchBtn();
 
 /* ============================================================
    星球详情页：点击星球 -> 左侧信息 + 右侧可旋转 3D 建模
@@ -1490,6 +1552,8 @@ function hitTestPlanet(clientX, clientY) {
 function openDetail(p) {
   detailPlanet = p;
   detailBelt = (p === BELT);
+  if (PLANETS.includes(p)) { seenPlanets.add(p.name); if (seenPlanets.size >= PLANETS.length) unlock('allplanets'); }
+  if (p === BELT) unlock('asteroid');
   detailOpen = true;
   detailSpin = (p === SUN) ? sunSpin : (p.spin || 0);   // 沿用当前角度，视觉连续（兜底避免 NaN）
   detailTilt = 0.5; detailZoom = 1;
@@ -1538,7 +1602,7 @@ function fillDetailInfo(p) {
       const where = (p.name === '太阳') ? '太阳表面（如果能站在炽热气体上）' : (p.name + '表面');
       gRes.innerHTML = `站在 <b>${where}</b>，你约 <b>${onBody.toFixed(1)}</b> 公斤 ${extra}`;
     };
-    gInput.oninput = calc;
+    gInput.oninput = () => { calc(); unlock('weight'); };
     calc();
   } else if (gEl) {
     gEl.style.display = 'none';
@@ -1574,6 +1638,7 @@ function renderQuiz(p) {
         qEl.dataset.done = '1';
         if (opt[1]) {
           b.classList.add('right'); fb.textContent = '✅ 答对啦！'; fb.className = 'feedback ok';
+          unlock('quiz');
         } else {
           b.classList.add('wrong'); fb.textContent = '❌ ' + item.why; fb.className = 'feedback bad';
           qEl.querySelectorAll('.opt').forEach((ob, j) => { if (item.a[j][1]) ob.classList.add('right'); });
@@ -1789,3 +1854,4 @@ loadRealTextures();   // 联网时用真实照片贴图覆盖
 loadAsteroidModel();  // 解析内嵌的真实贝努(Bennu)形状模型（window.BENNU_OBJ），离线可用；缺失则回退程序化岩石
 updateCamera();
 requestAnimationFrame(frame);
+unlock('welcome');   // 进入即解锁「初来乍到」（已解锁过则静默）
