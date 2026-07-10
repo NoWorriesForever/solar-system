@@ -410,6 +410,12 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.15', date: '2026-07-10', type: 'minor', title: '土星环重做：明亮暖金光环', changes: [
+    '修复联网时土星环发灰、出现网格的根因：真实 alpha 贴图(8k_saturn_ring_alpha.png) 的 RGB 近似灰度，采样后覆盖了漂亮的程序化环带；现停用该贴图，统一使用程序化暖金渐变',
+    '提亮环带：B 环峰值提升至 luminous 金白(255,242,206)，A 环更明亮，整体更「明亮好看」',
+    '新增环外柔和暖光晕（外发光），让光环像在发光，更有质感',
+    '受光侧高光增强（前向散射更明显），主场景与详情页统一',
+  ]},
   { ver: '2.14', date: '2026-07-10', type: 'minor', title: '成就面板修复 + 小彩蛋', changes: [
     '修复：成就面板原本没有定位样式、且关闭按钮失效（.hidden 规则缺失），现在更新日志/成就共用弹窗样式，点击 ✕、点背景、按 Esc 都能正常关闭',
     '彩蛋①：键盘输入秘籍「↑↑↓↓←→←→ B A」开启/关闭「🌈 彩虹尾巴」模式，行星公转时拖出彩色尾巴',
@@ -611,6 +617,12 @@ function drawSaturnRing(pos, centerDepth, visualR) {
     ctx.clip();
     ctx.translate(sp.x, sp.y);
     ctx.scale(1, sq);
+    // 柔和外发光：让光环像在发亮（环外一层暖光晕）
+    const glow = ctx.createRadialGradient(0, 0, rxO * 0.9, 0, 0, rxO * 1.45);
+    glow.addColorStop(0, 'rgba(255,238,200,0.16)');
+    glow.addColorStop(1, 'rgba(255,238,200,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0, 0, rxO * 1.45, 0, Math.PI * 2); ctx.fill();
     // 环形裁剪：外圆 - 内圆（evenodd）
     ctx.beginPath();
     ctx.arc(0, 0, rxO, 0, Math.PI * 2);
@@ -630,8 +642,8 @@ function drawSaturnRing(pos, centerDepth, visualR) {
     // 受光侧柔和高光（前向散射，让环发亮有质感）
     const hx = Lscr.x * rxO * 0.5, hy = (Lscr.y * rxO * 0.5) / sq;
     const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, rxO * 1.1);
-    hg.addColorStop(0, 'rgba(255,250,235,0.22)');
-    hg.addColorStop(0.5, 'rgba(255,250,235,0.05)');
+    hg.addColorStop(0, 'rgba(255,250,235,0.30)');
+    hg.addColorStop(0.5, 'rgba(255,250,235,0.07)');
     hg.addColorStop(1, 'rgba(255,250,235,0)');
     ctx.fillStyle = hg;
     ctx.beginPath(); ctx.arc(0, 0, rxO, 0, Math.PI * 2); ctx.fill();
@@ -866,22 +878,22 @@ function buildProceduralRingGrad() {
   // 卡通土星环：干净平滑的暖金环带，凸显明亮的 B 环 + 清晰的卡西尼缝。
   // 控制点（t, alpha, R, G, B），wide smoothstep 过渡 → 无硬边、无脏噪声。
   const cps = [
-    [0.00, 0.10, 196, 178, 146],   // 内缘（C 环最内，极淡）
-    [0.12, 0.30, 206, 187, 150],
-    [0.18, 0.44, 214, 195, 156],   // C / B 交界
-    [0.21, 0.88, 246, 222, 168],   // B 环内缘，明亮起
-    [0.30, 0.96, 251, 229, 178],   // B 环最宽最亮（金色主体）
-    [0.40, 0.92, 247, 223, 172],
-    [0.46, 0.80, 237, 211, 161],
-    [0.472, 0.05, 150, 134, 104],  // 卡西尼缝（干净大缝隙）
-    [0.485, 0.05, 150, 134, 104],
-    [0.50, 0.72, 232, 210, 166],   // 卡西尼缝后亮环（A 环内缘）
-    [0.62, 0.60, 224, 202, 159],
-    [0.72, 0.66, 229, 207, 163],
-    [0.80, 0.46, 212, 190, 149],   // 恩克缝（A 环中细缝，略暗）
-    [0.835, 0.62, 227, 205, 161],
-    [0.92, 0.40, 215, 195, 154],
-    [1.00, 0.07, 192, 173, 142],   // 外缘淡出
+    [0.00, 0.08, 202, 184, 150],   // 内缘（C 环最内，极淡）
+    [0.12, 0.30, 214, 195, 158],
+    [0.18, 0.48, 226, 206, 164],   // C / B 交界
+    [0.21, 0.92, 252, 230, 182],   // B 环内缘，明亮起
+    [0.30, 1.00, 255, 242, 206],   // B 环最宽最亮（luminous 金白主体）
+    [0.40, 0.96, 253, 232, 184],
+    [0.46, 0.82, 242, 218, 167],
+    [0.472, 0.04, 138, 122, 94],   // 卡西尼缝（干净大缝隙）
+    [0.485, 0.04, 138, 122, 94],
+    [0.50, 0.80, 240, 218, 172],   // 卡西尼缝后亮环（A 环内缘）
+    [0.62, 0.68, 232, 210, 166],
+    [0.72, 0.74, 238, 216, 172],   // A 环中段
+    [0.80, 0.52, 220, 198, 156],   // 恩克缝（A 环中细缝，略暗）
+    [0.835, 0.68, 234, 212, 170],
+    [0.92, 0.44, 218, 198, 158],
+    [1.00, 0.06, 198, 180, 148],   // 外缘淡出
   ];
   const sm = (x) => x * x * (3 - 2 * x);          // smoothstep 平滑插值
   function sample(t) {
@@ -902,9 +914,9 @@ function buildProceduralRingGrad() {
     // 极轻微的大尺度明暗起伏（±6%），让环有生气但不脏
     const shimmer = 1 + 0.06 * Math.sin(t * Math.PI * 2 * 1.5);
     const a = Math.max(0, Math.min(1, base.al * shimmer));
-    out.r.push(Math.min(255, base.r * 1.05));
-    out.g.push(Math.min(255, base.g * 1.05));
-    out.b.push(Math.min(255, base.b * 1.05));
+    out.r.push(Math.min(255, base.r * 1.08));
+    out.g.push(Math.min(255, base.g * 1.08));
+    out.b.push(Math.min(255, base.b * 1.08));
     out.a.push(a);
   }
   return out;
@@ -929,11 +941,9 @@ function smoothRingGrad(g, pass) {
   g.r = cur.r; g.g = cur.g; g.b = cur.b; g.a = cur.a;
 }
 function loadRingTexture() {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => { try { RING_SRC = toSrc(img, img.width, img.height); buildRingGrad(RING_SRC); } catch (e) {} };
-  img.onerror = () => {};               // 离线：保留程序化环（已含卡西尼缝等分带）
-  img.src = 'https://cdn.jsdelivr.net/gh/tom-bermingham/solar-system@main/textures/8k_saturn_ring_alpha.png';
+  // 土星环改用程序化暖金渐变（明亮、干净、无网格）。
+  // 真实 alpha 贴图(8k_saturn_ring_alpha.png) 的 RGB 近似灰度，采样后会覆盖掉漂亮的程序化环带，
+  // 让环发灰、出现细密网格；故不再加载。buildProceduralRingGrad() 已含真实卡西尼缝/恩克缝/明亮 B 环结构。
 }
 /* 从贴图（Image 或 canvas）生成可逐像素采样的源数据（等距柱状 RGBA） */
 function toSrc(img, w, h) {
@@ -1783,6 +1793,12 @@ function drawDetailRing(rScreen, cx, cy, tilt, which, spin) {
   // 变换到"环平面未压扁"坐标：y 放大，椭圆→圆
   dctx.translate(cx, cy);
   dctx.scale(1, sq);
+  // 柔和外发光：让光环像在发亮（环外一层暖光晕）
+  const dglow = dctx.createRadialGradient(0, 0, rxO * 0.9, 0, 0, rxO * 1.45);
+  dglow.addColorStop(0, 'rgba(255,238,200,0.16)');
+  dglow.addColorStop(1, 'rgba(255,238,200,0)');
+  dctx.fillStyle = dglow;
+  dctx.beginPath(); dctx.arc(0, 0, rxO * 1.45, 0, Math.PI * 2); dctx.fill();
   // 环形裁剪：外圆 - 内圆（evenodd）
   dctx.beginPath();
   dctx.arc(0, 0, rxO, 0, Math.PI * 2);
@@ -1813,8 +1829,8 @@ function drawDetailRing(rScreen, cx, cy, tilt, which, spin) {
   // 受光侧柔和高光（前向散射，让环发亮有质感）
   const hx = L.x * rxO * 0.5, hy = (L.y * rxO * 0.5) / sq;
   const hg = dctx.createRadialGradient(hx, hy, 0, hx, hy, rxO * 1.1);
-  hg.addColorStop(0, 'rgba(255,250,235,0.22)');
-  hg.addColorStop(0.5, 'rgba(255,250,235,0.05)');
+  hg.addColorStop(0, 'rgba(255,250,235,0.30)');
+  hg.addColorStop(0.5, 'rgba(255,250,235,0.07)');
   hg.addColorStop(1, 'rgba(255,250,235,0)');
   dctx.fillStyle = hg;
   dctx.beginPath(); dctx.arc(0, 0, rxO, 0, Math.PI * 2); dctx.fill();
