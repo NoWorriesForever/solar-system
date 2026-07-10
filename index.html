@@ -117,6 +117,43 @@
     #detail .left { width: 100%; max-width: none; min-width: 0; max-height: 46%; }
     #detail .right { flex: 1; }
   }
+
+  /* 更新日志弹窗 */
+  #changelog { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; }
+  #changelog.hidden { display: none; }
+  #changelog .cl-backdrop { position: absolute; inset: 0; background: rgba(3,5,15,.66); backdrop-filter: blur(3px); }
+  #changelog .cl-panel {
+    position: relative; width: min(640px, 92vw); max-height: 84vh;
+    background: #0c1330; border: 1px solid #2a3766; border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.55); display: flex; flex-direction: column; overflow: hidden;
+    color: #eaf0ff; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  #changelog .cl-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid #1d2a52;
+  }
+  #changelog .cl-head h2 { font-size: 18px; color: #eaf0ff; }
+  #changelog .cl-close {
+    background: #1b2547; border: 1px solid #34437a; color: #cdd8ff;
+    border-radius: 9px; width: 34px; height: 34px; font-size: 15px; cursor: pointer;
+  }
+  #changelog .cl-close:active { transform: scale(.94); }
+  #changelog .cl-body { padding: 6px 22px 22px; overflow-y: auto; }
+  #changelog .cl-ver { margin-top: 18px; }
+  #changelog .cl-ver:first-child { margin-top: 12px; }
+  #changelog .cl-vhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  #changelog .cl-vnum { font-size: 16px; font-weight: 700; color: #ffd166; font-variant-numeric: tabular-nums; }
+  #changelog .cl-vnum.major { color: #7aa2ff; }
+  #changelog .cl-type {
+    font-size: 11px; padding: 2px 9px; border-radius: 999px;
+    background: #1b2547; color: #9fb0d8; border: 1px solid #34437a;
+  }
+  #changelog .cl-type.major { background: rgba(122,162,255,.18); color: #9db8ff; border-color: #3a4f9e; }
+  #changelog .cl-date { font-size: 12.5px; color: #8a9bc4; }
+  #changelog .cl-title { font-size: 14px; color: #e7edff; margin: 5px 0 7px; font-weight: 600; }
+  #changelog .cl-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  #changelog .cl-list li { font-size: 13.5px; line-height: 1.65; color: #cdd8ff; padding-left: 18px; position: relative; }
+  #changelog .cl-list li::before { content: "•"; position: absolute; left: 4px; color: #5b8cff; }
 </style>
 </head>
 <body>
@@ -143,6 +180,7 @@
       <span class="val" id="speedVal">1.0×</span>
     </div>
     <button id="resetBtn">↺ 复位视角</button>
+    <button id="changelogBtn">📋 更新日志</button>
   </div>
 
   <div id="flag">⚠️ 自转速度为「示意加速」（保持行星间相对快慢），属待定项，后续可改。</div>
@@ -166,6 +204,18 @@
       <canvas id="detailCanvas"></canvas>
       <div class="model-note" id="d-model-note"></div>
       <div class="hint3d" id="d-hint3d">拖动旋转 · 滚轮缩放（使用真实表面贴图）</div>
+    </div>
+  </div>
+
+  <!-- 更新日志弹窗 -->
+  <div id="changelog" class="hidden">
+    <div class="cl-backdrop" id="clBackdrop"></div>
+    <div class="cl-panel">
+      <div class="cl-head">
+        <h2>📋 更新日志</h2>
+        <button class="cl-close" id="clClose" aria-label="关闭">✕</button>
+      </div>
+      <div class="cl-body" id="clBody"></div>
     </div>
   </div>
 

@@ -395,6 +395,72 @@ const EM = {
   moonOrbitSpeed: (2 * Math.PI * 3) / 14,   // 月球公转：约 14 秒一圈 = 一个「月相周期」
 };
 
+/* ============================================================
+   更新日志（CHANGELOG）
+   版本规则：小版本 = 1.1 / 1.2 / 1.x（普通修复与优化）；大版本 = x.0（含大机制更新）。
+   每次发布更新时，在数组「顶部」追加一条（newest-first），并相应递增版本号。
+   字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
+   ============================================================ */
+const CHANGELOG = [
+  { ver: '2.10', date: '2026-07-10', type: 'minor', title: '土星环卡通化重做', changes: [
+    '参考卡通土星风格，弃用脏噪声纹理，改用干净平滑的暖金环带（明亮 B 环 + 清晰卡西尼缝 + A 环 + 恩克缝）',
+    '主场景与详情页统一画法：倾斜椭圆「还原成圆」+ 环形裁剪 + 径向渐变实心填充，彻底消除网格 / 框线 / 发糊',
+    '新增土星本影楔形暗带（环被星球影子切断的迷人细节）与受光侧柔和高光，立体感更强',
+  ]},
+  { ver: '2.9', date: '2026-07-10', type: 'minor', title: '土星环弃框线改实心椭圆环带', changes: [
+    '详情页环由分段描边改为实心同心椭圆环带（线宽彼此叠盖成连续实体），消除「只剩框线」的观感',
+    '恢复真实环带数据（含卡西尼缝留空），整体提亮、更饱满',
+    '加土星本影暗带，并随土星轴倾角与自转同步倾斜',
+  ]},
+  { ver: '2.8', date: '2026-07-10', type: 'minor', title: '土星环随星球自转 + 本影暗带', changes: [
+    '详情页环重写：真正 3D 环网格，随土星自转轴倾斜并随行星自转一起转（拖动旋转时环与星球同步）',
+    '加入土星本体本影（背阳侧楔形暗带）与卡西尼缝亮边',
+    '环材质整体增亮、更饱满（修复上一版「只剩框线」的问题）',
+  ]},
+  { ver: '2.7', date: '2026-07-10', type: 'minor', title: '主场景环提亮 + 小行星公转降至 1/10', changes: [
+    '主场景土星环大幅提亮（增亮系数 + 提高不透明度），不再发暗发灰',
+    '详情页环改用同心椭圆环带 + 横向渐变光照，彻底消除网格',
+    '小行星带公转速度降至原来的 1/10，更接近真实缓慢漂移的观感',
+  ]},
+  { ver: '2.6', date: '2026-07-10', type: 'minor', title: '土星环暖金程序化环带', changes: [
+    '重写程序化环渐变：暖金色调 + 细密同心环纹 + 真实卡西尼 / 恩克 / 惠更斯缝',
+    '主场景与详情页改用径向连续渐变 + 前向散射白化高光，质感更真实',
+  ]},
+  { ver: '2.5', date: '2026-07-10', type: 'minor', title: '详情页土星环消除网格', changes: [
+    '详情页环由 150×22 离散四边形改为径向连续渐变 + 角向扇形，消除网格纹理',
+  ]},
+  { ver: '2.4', date: '2026-07-10', type: 'minor', title: '月相相位序列修正', changes: [
+    '月相相位角取负，使月相按正确天文顺序循环（新月 → 上弦 → 满月 → 下弦），与屏幕逆时针公转一致',
+  ]},
+  { ver: '2.3', date: '2026-07-10', type: 'minor', title: '全太阳系公转 / 自转统一逆时针', changes: [
+    '行星、小行星带、月球公转与自转统一改为逆时针（屏幕视觉），与地月系方向一致',
+  ]},
+  { ver: '2.2', date: '2026-07-10', type: 'minor', title: '月球公转改逆时针', changes: [
+    '月球公转方向改为逆时针（自北向南看），与主场景行星公转方向一致',
+  ]},
+  { ver: '2.1', date: '2026-07-10', type: 'minor', title: '地月系月相示意图', changes: [
+    '在「当前月相」文字旁绘制对应月相示意图（含终止线正确的盈亏形状），便于孩子直观对照',
+  ]},
+  { ver: '2.0', date: '2026-07-10', type: 'major', title: '新增「太阳系 / 地月系」双模式切换', changes: [
+    '新增顶部切换按钮，可在「太阳系」与「地月系」之间切换 ★ 大机制更新',
+    '独立地月系场景：地球居中、月球绕地公转、太阳侧方光源、实时月相计算',
+    '地月系距离 / 大小为示意比例（界面注明），物理规律（月相 / 潮汐锁定 / 光照）严格真实',
+  ]},
+  { ver: '1.2', date: '2026-07-09', type: 'minor', title: '修复详情页环「只有一半且很丑」', changes: [
+    '修复错误本影把半环压黑的问题，改为楔形暗带 + 立体感 + 柔化处理',
+  ]},
+  { ver: '1.1', date: '2026-07-09', type: 'minor', title: '修复详情页土星环「消失」', changes: [
+    '修复详情页土星环因错误的双重缩放而飞出画布（环直接消失）的问题',
+  ]},
+  { ver: '1.0', date: '2026-07-09', type: 'major', title: '初始版本发布', changes: [
+    '太阳系主场景：八大行星 + 小行星带按真实轨道规律公转 / 自转',
+    '点击星球进入详情页：趣味小知识、给孩子讲解、小测验',
+    '真实照片贴图（联网加载，断网自动回退为程序化生成）',
+    '纯 Canvas 2D 零依赖，双击即开、断网可跑',
+  ]},
+];
+const CURRENT_VERSION = CHANGELOG[0].ver;
+
 /* ---------- 画布 ---------- */
 const canvas = document.getElementById('sky');
 const ctx = canvas.getContext('2d');
@@ -1244,6 +1310,33 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
   else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
 });
+
+/* ---------- 更新日志弹窗 ---------- */
+const clEl = document.getElementById('changelog');
+const clBody = document.getElementById('clBody');
+const clBtn = document.getElementById('changelogBtn');
+clBtn.textContent = '📋 更新日志 v' + CURRENT_VERSION;   // 按钮显示当前版本号
+function renderChangelog() {
+  clBody.innerHTML = CHANGELOG.map((e) => {
+    const major = e.type === 'major';
+    const items = (e.changes || []).map((c) => `<li>${c}</li>`).join('');
+    return `<div class="cl-ver">
+      <div class="cl-vhead">
+        <span class="cl-vnum${major ? ' major' : ''}">v${e.ver}</span>
+        <span class="cl-type${major ? ' major' : ''}">${major ? '大版本' : '小版本'}</span>
+        <span class="cl-date">${e.date}</span>
+      </div>
+      <div class="cl-title">${e.title}</div>
+      <ul class="cl-list">${items}</ul>
+    </div>`;
+  }).join('');
+}
+function openChangelog() { renderChangelog(); clEl.classList.remove('hidden'); }
+function closeChangelog() { clEl.classList.add('hidden'); }
+clBtn.addEventListener('click', openChangelog);
+document.getElementById('clClose').addEventListener('click', closeChangelog);
+document.getElementById('clBackdrop').addEventListener('click', closeChangelog);
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeChangelog(); });
 
 /* ============================================================
    星球详情页：点击星球 -> 左侧信息 + 右侧可旋转 3D 建模
