@@ -419,6 +419,11 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.20', date: '2026-07-10', type: 'minor', title: '月相亮面方向修正', changes: [
+    '修复月相圆盘在「新月」端点的渲染 bug：illum=0 时终止线椭圆退化为整圆，会把整盘画亮（新月看起来像满月）——现对端点做全暗/全亮特判',
+    '地月系场景里的大月球改用与「月相小图」同一套正确相位形状绘制（此前用 3D 球按"朝太阳半亮"渲染，相机在太阳同侧导致月球相位错乱、无法呈现蛾眉/凸月）',
+    '修正后：新月全暗→蛾眉(右亮)→上弦(右半)→盈凸(右亮为主)→满月→亏凸(左亮为主)→下弦(左半)→残月(左亮)，亮面方向与真实天空、小图一致',
+  ]},
   { ver: '2.19', date: '2026-07-10', type: 'minor', title: '日食月食并入地月系分类', changes: [
     '把「日食月食」从顶部独立视图改为「地月系」内部的子视图：顶部仅保留「太阳系 / 地月系」',
     '进入地月系后，底部出现「月相 / 日食月食」切换，默认显示月相，点「日食月食」即可拖动月球观察食的发生',
@@ -1177,6 +1182,13 @@ function drawMoonPhaseDisk(cx, cy, R, illum, litOnRight) {
   // 阴影面（整盘先铺底）
   ctx.fillStyle = 'rgba(38,44,62,0.96)';
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  // 端点处理：新月全暗、满月全亮（否则 illum=0/1 时终止线椭圆退化为整圆，会把整盘画亮）
+  if (illum <= 0.002) { strokeDisk(cx, cy, R); return; }
+  if (illum >= 0.998) {
+    ctx.fillStyle = '#f3efe2';
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+    strokeDisk(cx, cy, R); return;
+  }
   // 受光面：由半圆轮廓 + 终止线半椭圆组成
   ctx.fillStyle = '#f3efe2';
   const a = (1 - 2 * illum) * R;            // 终止线水平半轴（带符号：>0 凸向右，<0 凸向左）
@@ -1187,6 +1199,9 @@ function drawMoonPhaseDisk(cx, cy, R, illum, litOnRight) {
   ctx.ellipse(cx, cy, Math.abs(a) || 1e-4, R, 0, Math.PI / 2, -Math.PI / 2, bulgeRight);
   ctx.closePath(); ctx.fill();
   // 细描边，深色背景上更清晰
+  strokeDisk(cx, cy, R);
+}
+function strokeDisk(cx, cy, R) {
   ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
 }
@@ -1210,6 +1225,7 @@ function drawEarthMoonScene() {
   // 正确天文顺序循环：新月→上弦→满月→下弦→新月（北半球：盈=右亮、亏=左亮）
   const ang = (-emMoonAngle) * 180 / Math.PI;
   const illum = (1 - Math.cos(ang * Math.PI / 180)) / 2;
+  const litOnRight = (ang >= 0 && ang < 180);   // 北半球：盈(新月→满月)亮面在右
   const phase = emPhaseName(ang);
   seenPhases.add(phase); if (seenPhases.size >= 8) unlock('phases');
 
@@ -1251,7 +1267,13 @@ function drawEarthMoonScene() {
     L: norm(sub(sunPos, mPos)), src: MOON.src, spin: emMoonSpin });
   bodies.sort((a, b) => b.proj.depth - a.proj.depth);
   for (const b of bodies) {
-    drawSphere(b.src, b.proj, b.r, b.spin, b.L, false);
+    if (b.name === '月球') {
+      // 月球用「真实月相」形状绘制：与下方小图、真实天空一致（新月→满月亮面在右、可正确呈现蛾眉→上弦→盈凸→满月）。
+      // 用 3D 球按"朝太阳半亮"渲染无法表现蛾眉/凸月，且当前相机在太阳同侧会让月球相位错乱，故改用相位圆盘。
+      drawMoonPhaseDisk(b.proj.x, b.proj.y, b.r, illum, litOnRight);
+    } else {
+      drawSphere(b.src, b.proj, b.r, b.spin, b.L, false);
+    }
     ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(b.name, b.proj.x + 1, b.proj.y - b.r - 5 + 1);
@@ -1275,7 +1297,6 @@ function drawEarthMoonScene() {
   ctx.fillStyle = '#ffe08a';
   ctx.fillText(cap, W / 2, capY);
   // 在文字右侧画一个真实的月相小图，让孩子直观看到「当前是哪一种月相」
-  const litOnRight = (ang >= 0 && ang < 180);
   const diskR = 15, diskX = W / 2 + ctx.measureText(cap).width / 2 + 24, diskY = capY;
   drawMoonPhaseDisk(diskX, diskY, diskR, illum, litOnRight);
 
