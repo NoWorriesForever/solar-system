@@ -410,6 +410,12 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.16', date: '2026-07-10', type: 'minor', title: '小行星详情页建模提亮 + 性能优化', changes: [
+    '提亮贝努岩石模型：基色由暗灰棕(150,142,128)改为暖岩色(200,182,150)，环境光 0.40→0.42，整体更明亮',
+    '光照升级：在漫反射基础上增加高光(pow(d,6)*0.20)与轮廓光(边缘 rim +0.10)，岩石更有立体质感',
+    '新增柔和暖光晕：岩石背后一圈暖色辉光，让它从暗背景中「浮」出来',
+    '性能优化：把逐面 fill 改为按亮度档批量填充(48 档)，fill 调用从数万次降到数百次，旋转更流畅',
+  ]},
   { ver: '2.15', date: '2026-07-10', type: 'minor', title: '土星环重做：明亮暖金光环', changes: [
     '修复联网时土星环发灰、出现网格的根因：真实 alpha 贴图(8k_saturn_ring_alpha.png) 的 RGB 近似灰度，采样后覆盖了漂亮的程序化环带；现停用该贴图，统一使用程序化暖金渐变',
     '提亮环带：B 环峰值提升至 luminous 金白(255,242,206)，A 环更明亮，整体更「明亮好看」',
@@ -1867,7 +1873,18 @@ function drawDetail() {
   if (detailPlanet.ring) drawDetailRing(rScreen, cx, cy, effTilt, 'front', detailSpin);  // 环前半（盖在星球上）
 }
 
-// 详情页里展示一颗可旋转的代表小行星（程序化不规则岩石，逐面受光 + 背面剔除）
+// 详情页里展示一颗可旋转的代表小行星（真实贝努形状，逐面受光 + 背面剔除 + 批量填充优化）
+// 提亮 + 暖岩色 + 高光/轮廓光，让暗淡的碳质岩石模型变得明亮好看；批量填充大幅减少 fill 调用
+const AST_BASE = { r: 200, g: 182, b: 150 };               // 暖灰岩色（比旧 150,142,128 更亮更暖）
+const AST_BUCKETS = 48;
+const AST_PALETTE = (() => {
+  const a = [];
+  for (let b = 0; b < AST_BUCKETS; b++) {
+    const bb = (b + 0.5) / AST_BUCKETS;
+    a.push('rgb(' + Math.min(255, AST_BASE.r * bb | 0) + ',' + Math.min(255, AST_BASE.g * bb | 0) + ',' + Math.min(255, AST_BASE.b * bb | 0) + ')');
+  }
+  return a;
+})();
 function drawDetailBeltAsteroid(cx, cy, R, spin, tilt) {
   const c = Math.cos(tilt), s = Math.sin(tilt);
   const right = DETAIL_BASIS.right;                         // (1,0,0)
@@ -1880,10 +1897,9 @@ function drawDetailBeltAsteroid(cx, cy, R, spin, tilt) {
   if (!geom._rv || geom._rv.length !== nv * 3) {
     geom._rv = new Float32Array(nv * 3);
     geom._rn = new Float32Array(nf * 3);
-    geom._zc = new Float32Array(nf);
     geom._order = new Int32Array(nf);
   }
-  const rv = geom._rv, rn = geom._rn, zc = geom._zc, order = geom._order;
+  const rv = geom._rv, rn = geom._rn, order = geom._order;
   const axis = norm({ x: 0.35, y: 0.5, z: 0.78 });
   const M = rotMat(axis.x, axis.y, axis.z, spin);
   for (let i = 0; i < nv; i++) {
@@ -1909,25 +1925,40 @@ function drawDetailBeltAsteroid(cx, cy, R, spin, tilt) {
     const zq = rv[fq[0] * 3 + 2] + rv[fq[1] * 3 + 2] + rv[fq[2] * 3 + 2];
     return zp - zq;
   });
+  // 柔和暖光晕：让岩石从暗背景里「浮」出来，更有立体感
+  const ag = dctx.createRadialGradient(cx, cy, R * 0.5, cx, cy, R * 1.7);
+  ag.addColorStop(0, 'rgba(255,228,188,0.12)');
+  ag.addColorStop(1, 'rgba(255,228,188,0)');
+  dctx.fillStyle = ag;
+  dctx.beginPath(); dctx.arc(cx, cy, R * 1.7, 0, Math.PI * 2); dctx.fill();
+  // 批量填充：把亮度相近的连续面合并成一条路径，fill 调用从数万次降到数百次，更流畅
+  // 亮度 = 环境光 + 漫反射 + 高光 + 轮廓光，比旧版「纯漫反射」更亮更有质感
+  let curB = -1;
   for (let k = 0; k < cnt; k++) {
     const i = order[k];
     const fc = geom.faces[i];
     const a = fc[0] * 3, b = fc[1] * 3, c3 = fc[2] * 3;
     const nx = rn[i * 3], ny = rn[i * 3 + 1], nz = rn[i * 3 + 2];
     const diff = nx * light.x + ny * light.y + nz * light.z;
-    const bright = 0.40 + 0.60 * (diff > 0 ? diff : 0);     // 纯法线漫反射，真实陨石质感
-    const p0x = cx + R * (rv[a] * right.x + rv[a + 1] * right.y + rv[a + 2] * right.z);
-    const p0y = cy - R * (rv[a] * up.x + rv[a + 1] * up.y + rv[a + 2] * up.z);
-    const p1x = cx + R * (rv[b] * right.x + rv[b + 1] * right.y + rv[b + 2] * right.z);
-    const p1y = cy - R * (rv[b] * up.x + rv[b + 1] * up.y + rv[b + 2] * up.z);
-    const p2x = cx + R * (rv[c3] * right.x + rv[c3 + 1] * right.y + rv[c3 + 2] * right.z);
-    const p2y = cy - R * (rv[c3] * up.x + rv[c3 + 1] * up.y + rv[c3 + 2] * up.z);
-    const r = (150 * bright) | 0, g = (142 * bright) | 0, bl = (128 * bright) | 0;
-    dctx.fillStyle = 'rgb(' + r + ',' + g + ',' + bl + ')';
-    dctx.beginPath();
-    dctx.moveTo(p0x, p0y); dctx.lineTo(p1x, p1y); dctx.lineTo(p2x, p2y); dctx.closePath();
-    dctx.fill();
+    const d = diff > 0 ? diff : 0;
+    const nDotV = -(nx * f.x + ny * f.y + nz * f.z);         // 0=轮廓边缘 1=正对相机
+    const bright = 0.42 + 0.56 * d + Math.pow(d, 6) * 0.20 + Math.pow(1 - nDotV, 4) * 0.10;
+    const bk = bright >= 1 ? AST_BUCKETS - 1 : (bright * AST_BUCKETS) | 0;
+    if (bk !== curB) {                                       // 亮度档位变了才 flush 上一批
+      if (curB >= 0) dctx.fill();
+      curB = bk;
+      dctx.fillStyle = AST_PALETTE[bk];
+      dctx.beginPath();
+    }
+    dctx.moveTo(cx + R * (rv[a] * right.x + rv[a + 1] * right.y + rv[a + 2] * right.z),
+                cy - R * (rv[a] * up.x + rv[a + 1] * up.y + rv[a + 2] * up.z));
+    dctx.lineTo(cx + R * (rv[b] * right.x + rv[b + 1] * right.y + rv[b + 2] * right.z),
+                cy - R * (rv[b] * up.x + rv[b + 1] * up.y + rv[b + 2] * up.z));
+    dctx.lineTo(cx + R * (rv[c3] * right.x + rv[c3 + 1] * right.y + rv[c3 + 2] * right.z),
+                cy - R * (rv[c3] * up.x + rv[c3 + 1] * up.y + rv[c3 + 2] * up.z));
+    dctx.closePath();
   }
+  if (curB >= 0) dctx.fill();
 }
 let detailLastT = 0;
 function detailFrame(now) {
