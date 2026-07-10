@@ -478,63 +478,74 @@ function ringWorld(r, a, pos) {
 }
 function drawSaturnRing(pos, centerDepth, visualR) {
   const rin = visualR * 1.3, rout = visualR * 2.4;
-  const SEG = 140;                                  // 角向分段
-  const sd = norm(pos);                             // 土星→太阳方向（阴影轴）
-  const sp = project(pos);                          // 土星屏幕投影（渐变中心）
-  if (!sp.visible) return [];
-  const scale = focal / sp.depth;                   // world→screen（土星深度处）
+  const sd = norm(pos);                             // 太阳→土星方向（阴影轴）
+  const sp = project(pos);                          // 土星屏幕投影（环中心）
+  if (!sp.visible || !isFinite(sp.depth) || sp.depth <= 0) return null;
+  const scale = focal / sp.depth;
   const rinS = scale * rin, routS = scale * rout;
-  const N = 72;                                     // 径向渐变采样：连续着色，消除色块/网格
-  const back = [], front = [];
-  for (let i = 0; i < SEG; i++) {
-    const a0 = (i / SEG) * Math.PI * 2, a1 = ((i + 1) / SEG) * Math.PI * 2;
-    const q = [ringWorld(rin, a0, pos), ringWorld(rout, a0, pos), ringWorld(rout, a1, pos), ringWorld(rin, a1, pos)];
-    const mid = project({ x: (q[0].x + q[2].x) / 2, y: (q[0].y + q[2].y) / 2, z: (q[0].z + q[2].z) / 2 });
-    if (!mid.visible) continue;
-    // 土星本影：环点处于背阳侧(along>0)且靠近阴影轴(垂直距离<土星半径)→被遮挡
-    const vx = mid.x - pos.x, vy = mid.y - pos.y, vz = mid.z - pos.z;
-    const along = vx * sd.x + vy * sd.y + vz * sd.z;
-    let shade = 1;
-    if (along > 0) {
-      const perp = Math.sqrt(Math.max(0, (vx * vx + vy * vy + vz * vz) - along * along));
-      const r = visualR;
-      if (perp < r) shade = 0.12;
-      else if (perp < r * 2.1) shade = 0.12 + 0.88 * ((perp - r) / (r * 1.1));
-      shade = Math.max(0.12, Math.min(1, shade));
-    }
-    // 前向散射：朝太阳一侧(along<0)的环更亮、偏白（真实土星环满相时发白增亮）
-    const sun = -along;
-    const fwd = Math.max(0, Math.min(1, (sun - 0.35) / 0.65));
-    const k = shade * (1.18 + 0.42 * fwd);           // 整体提亮，解决"环很暗"
-    const wMix = fwd * 0.32;
-    const grad = ctx.createRadialGradient(sp.x, sp.y, rinS, sp.x, sp.y, routS);
-    for (let s = 0; s <= N; s++) {
-      const t = s / N;
-      const idx = Math.max(0, Math.min(255, Math.floor(t * 255)));
-      const a = ringGrad ? ringGrad.a[idx] : 0.5;
-      if (a < 0.02) { grad.addColorStop(t, 'rgba(0,0,0,0)'); continue; }   // 卡西尼缝等透明带
-      let r = ringGrad ? ringGrad.r[idx] : 214;
-      let g = ringGrad ? ringGrad.g[idx] : 198;
-      let b = ringGrad ? ringGrad.b[idx] : 160;
-      r = r + (255 - r) * wMix; g = g + (248 - g) * wMix; b = b + (232 - b) * wMix;  // 白化高光
-      r = Math.min(255, r * k); g = Math.min(255, g * k); b = Math.min(255, b * k);
-      grad.addColorStop(t, `rgba(${r | 0},${g | 0},${b | 0},${Math.min(1, a * 1.55)})`);  // 提高不透明度，环更清晰明亮
-    }
-    (mid.depth < centerDepth ? back : front).push({ q, grad });
+  // 屏幕受光方向（指向太阳）≈ -sd 在屏幕上的近似
+  const Lscr = { x: -sd.x, y: -sd.y };
+  // 投影椭圆的竖直压扁比（外缘）：直接量取两个正交环点的投影跨度，最稳
+  let rxO = routS, ryO = routS * Math.max(0.06, Math.abs(Math.sin(SATURN_TILT)));
+  const pa = project(ringWorld(rout, 0, pos)), pb = project(ringWorld(rout, Math.PI / 2, pos));
+  if (pa.visible && pb.visible) {
+    rxO = Math.max(1, Math.abs(pa.x - sp.x));
+    ryO = Math.max(1, Math.abs(pb.y - sp.y));
   }
-  const drawSet = (set) => {
-    for (const item of set) {
-      const q = item.q;
-      const p0 = project(q[0]), p1 = project(q[1]), p2 = project(q[2]), p3 = project(q[3]);
-      if (!(p0.visible && p1.visible && p2.visible && p3.visible)) continue;
-      ctx.fillStyle = item.grad;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
-      ctx.closePath(); ctx.fill();
+  const rxI = rxO * rin / rout, ryI = ryO * rin / rout;
+  const sq = ryO / rxO;                             // 压扁比 → 用于把椭圆还原成圆
+  const rN = rinS;                                  // 本体屏幕半径（本影尺度）
+  // 由环带数据构建"圆形空间"的径向渐变（之后经压扁变换映射到椭圆环面）
+  const buildGrad = (c) => {
+    const g = c.createRadialGradient(0, 0, rxI, 0, 0, rxO);
+    const ST = 64;
+    for (let s = 0; s <= ST; s++) {
+      const t = s / ST;
+      const idx = Math.round(t * 255);
+      const a = ringGrad ? ringGrad.a[idx] : 0.5;
+      let r = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
+      r = Math.min(255, r * 1.08); g0 = Math.min(255, g0 * 1.08); b0 = Math.min(255, b0 * 1.08);
+      if (a < 0.02) g.addColorStop(t, 'rgba(0,0,0,0)');
+      else g.addColorStop(t, `rgba(${r | 0},${g0 | 0},${b0 | 0},${Math.min(1, a * 1.4)})`);
     }
+    return g;
   };
-  drawSet(back);
-  return front; // 行星之后绘制
+  // 画半个环（back=true 背向相机=上半，先画；front=下半，后画盖星球）
+  const drawHalf = (back) => {
+    ctx.save();
+    ctx.beginPath();
+    if (back) ctx.rect(0, 0, 1e6, sp.y); else ctx.rect(0, sp.y, 1e6, 1e6);
+    ctx.clip();
+    ctx.translate(sp.x, sp.y);
+    ctx.scale(1, sq);
+    // 环形裁剪：外圆 - 内圆（evenodd）
+    ctx.beginPath();
+    ctx.arc(0, 0, rxO, 0, Math.PI * 2);
+    ctx.arc(0, 0, rxI, 0, Math.PI * 2);
+    ctx.clip('evenodd');
+    // 实心环面（干净平滑渐变）
+    ctx.fillStyle = buildGrad(ctx);
+    ctx.beginPath(); ctx.arc(0, 0, rxO, 0, Math.PI * 2); ctx.fill();
+    // 土星本影：背光侧的柔和暗影（真实照片里环被星球影子切断）
+    const sgx = Lscr.x * rN * 0.78, sgy = (Lscr.y * rN * 0.78) / sq;
+    const sg = ctx.createRadialGradient(sgx, sgy, 0, sgx, sgy, rN * 1.75);
+    sg.addColorStop(0, 'rgba(16,11,5,0.62)');
+    sg.addColorStop(0.7, 'rgba(16,11,5,0.28)');
+    sg.addColorStop(1, 'rgba(16,11,5,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(0, 0, rxO, 0, Math.PI * 2); ctx.fill();
+    // 受光侧柔和高光（前向散射，让环发亮有质感）
+    const hx = Lscr.x * rxO * 0.5, hy = (Lscr.y * rxO * 0.5) / sq;
+    const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, rxO * 1.1);
+    hg.addColorStop(0, 'rgba(255,250,235,0.22)');
+    hg.addColorStop(0.5, 'rgba(255,250,235,0.05)');
+    hg.addColorStop(1, 'rgba(255,250,235,0)');
+    ctx.fillStyle = hg;
+    ctx.beginPath(); ctx.arc(0, 0, rxO, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  };
+  drawHalf(true);            // 背半先画（被星球遮挡）
+  return () => drawHalf(false);   // 前半个由调用方在画完星球后调用
 }
 // 月球（绕地球公转）
 function moonWorld() {
@@ -759,22 +770,25 @@ function buildRingGrad(tex) {
 function buildProceduralRingGrad() {
   const n = 256;
   const out = { r: [], g: [], b: [], a: [] };
-  // 控制点（t, alpha, R, G, B）——大尺度环带；平滑过渡避免硬边
+  // 卡通土星环：干净平滑的暖金环带，凸显明亮的 B 环 + 清晰的卡西尼缝。
+  // 控制点（t, alpha, R, G, B），wide smoothstep 过渡 → 无硬边、无脏噪声。
   const cps = [
-    [0.00, 0.05, 150, 142, 128],
-    [0.10, 0.30, 168, 156, 140],
-    [0.20, 0.22, 176, 162, 142],
-    [0.24, 0.92, 234, 206, 150],   // B 环内
-    [0.35, 0.96, 240, 214, 160],   // B 环最亮最宽
-    [0.45, 0.82, 226, 200, 150],   // B 环外
-    [0.475, 0.02, 120, 112, 96],   // 卡西尼缝（真实大缝隙，近透明）
-    [0.50, 0.72, 232, 214, 176],   // A 环内缘亮环（卡西尼缝后那道亮环，真实可见）
-    [0.62, 0.42, 192, 180, 152],   // 惠更斯缝（A 环中缝）
-    [0.72, 0.64, 222, 206, 168],   // A 环
-    [0.875, 0.10, 152, 144, 126],  // 恩克缝（A 环内细缝）
-    [0.90, 0.56, 214, 200, 164],   // A 环外
-    [0.95, 0.16, 180, 170, 148],   // F 环（稀薄）
-    [1.00, 0.05, 162, 154, 138],
+    [0.00, 0.10, 196, 178, 146],   // 内缘（C 环最内，极淡）
+    [0.12, 0.30, 206, 187, 150],
+    [0.18, 0.44, 214, 195, 156],   // C / B 交界
+    [0.21, 0.88, 246, 222, 168],   // B 环内缘，明亮起
+    [0.30, 0.96, 251, 229, 178],   // B 环最宽最亮（金色主体）
+    [0.40, 0.92, 247, 223, 172],
+    [0.46, 0.80, 237, 211, 161],
+    [0.472, 0.05, 150, 134, 104],  // 卡西尼缝（干净大缝隙）
+    [0.485, 0.05, 150, 134, 104],
+    [0.50, 0.72, 232, 210, 166],   // 卡西尼缝后亮环（A 环内缘）
+    [0.62, 0.60, 224, 202, 159],
+    [0.72, 0.66, 229, 207, 163],
+    [0.80, 0.46, 212, 190, 149],   // 恩克缝（A 环中细缝，略暗）
+    [0.835, 0.62, 227, 205, 161],
+    [0.92, 0.40, 215, 195, 154],
+    [1.00, 0.07, 192, 173, 142],   // 外缘淡出
   ];
   const sm = (x) => x * x * (3 - 2 * x);          // smoothstep 平滑插值
   function sample(t) {
@@ -789,24 +803,16 @@ function buildProceduralRingGrad() {
       b:  a[4] + (b[4] - a[4]) * u,
     };
   }
-  const TWO_PI = Math.PI * 2;
-  const F = 44;                                    // 细密环纹频率（匹配绘制采样，避免混叠）
   for (let i = 0; i < n; i++) {
     const t = i / (n - 1);
     const base = sample(t);
-    // 准周期细密环纹：多频凸组合，w∈[0,1]
-    let w = 0.5 + 0.5 * Math.sin(t * TWO_PI * F);
-    w = w * 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * TWO_PI * F * 2.3 + 1.3));
-    w = w * 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(t * TWO_PI * F * 0.5 + 0.7));
-    let a = base.al * (1 - 0.24 + 0.48 * w);       // 环纹亮度起伏 ±24%
-    a = Math.max(0, Math.min(1, a));
-    // 颜色细纹：亮纹偏暖金白、暗纹偏棕褐，丰富质感
-    const cm = w;
-    let cr = base.r + (252 - base.r) * cm * 0.32 + (148 - base.r) * (1 - cm) * 0.26;
-    let cg = base.g + (236 - base.g) * cm * 0.32 + (116 - base.g) * (1 - cm) * 0.26;
-    let cb = base.b + (196 - base.b) * cm * 0.32 + (84 - base.b) * (1 - cm) * 0.26;
-    cr = Math.min(255, cr * 1.06); cg = Math.min(255, cg * 1.06); cb = Math.min(255, cb * 1.06); // 整体提亮更饱满
-    out.r.push(cr); out.g.push(cg); out.b.push(cb); out.a.push(a);
+    // 极轻微的大尺度明暗起伏（±6%），让环有生气但不脏
+    const shimmer = 1 + 0.06 * Math.sin(t * Math.PI * 2 * 1.5);
+    const a = Math.max(0, Math.min(1, base.al * shimmer));
+    out.r.push(Math.min(255, base.r * 1.05));
+    out.g.push(Math.min(255, base.g * 1.05));
+    out.b.push(Math.min(255, base.b * 1.05));
+    out.a.push(a);
   }
   return out;
 }
@@ -929,17 +935,7 @@ function drawPlanet(p) {
   drawSphere(p.src, pr, rScreen, p.spin, L, false, p.ring ? { tilt: SATURN_TILT } : null);
 
   // 土星环（前半部分，后画）
-  if (ringFront) {
-    for (const item of ringFront) {
-      const q = item.q;
-      const p0 = project(q[0]), p1 = project(q[1]), p2 = project(q[2]), p3 = project(q[3]);
-      if (!(p0.visible && p1.visible && p2.visible && p3.visible)) continue;
-      ctx.fillStyle = item.fill;
-      ctx.beginPath();
-      ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
-      ctx.closePath(); ctx.fill();
-    }
-  }
+  if (ringFront) ringFront();
 
   // 名字标签
   ctx.font = '13px "PingFang SC","Microsoft YaHei",sans-serif';
@@ -1393,48 +1389,59 @@ function checkAllDone() {
 // 详情页土星环：与主场景一致——环在真实赤道面、按 SATURN_TILT+用户视角倾斜，并投射土星本影
 // which: 'back' 画背向相机的一半(星球之前)；'front' 画朝向相机的一半(星球之后)
 function drawDetailRing(rScreen, cx, cy, tilt, which, spin) {
-  // 优美的实心土星环：一圈圈"同心椭圆环带"（描边），整体随土星自转(spin)与轴倾角(tilt)同步。
-  // 线宽略大于环间距 → 彼此叠盖成连续实体环面，不再像框线/网格；颜色取真实环带数据(含卡西尼缝)。
+  // 卡通实心土星环：把倾斜椭圆还原成"圆空间"，用环形裁剪 + 圆形径向渐变填充，
+  // 颜色取自干净平滑的环带数据 → 连续实心、无框线/网格；再叠加土星本影与受光高光。
   const rin = rScreen * 1.3 * (ringGrad ? 0.92 : 1), rout = rScreen * 2.4;
   const T = Math.max(0.04, Math.abs(tilt));
-  const cT = Math.cos(T), sT = Math.sin(T), cP = Math.cos(spin), sP = Math.sin(spin);
-  const rx = rScreen * 2.4;                            // 环带水平半轴（外缘）
-  const ry = rx * Math.max(0.05, Math.abs(sT));        // 竖直半轴：随倾斜压扁 → 优美椭圆
-  const alpha = Math.atan2(sP * cT, 1);                // 环面随自转绕竖直轴的整体朝向（细微）
-  const N = 200;                                       // 同心椭圆数量（密 → 实心无隙）
-  const lw = (rout - rin) / N + 1.6;                   // 每环略宽于间距 → 叠盖成实体
+  const sT = Math.sin(T);
+  const rxO = rout, rxI = rin;                        // 水平半轴（外/内）
+  const ryO = rxO * Math.max(0.05, Math.abs(sT));    // 竖直半轴：随倾斜压扁 → 优美椭圆
+  const sq = ryO / rxO;                              // 压扁比 → 还原成圆
   const L = DETAIL_LIGHT, rN = rScreen * 1.0;
-  // 半环裁剪：背半=环面背向相机(z<0) → 屏幕上半；前半=朝向相机 → 下半
-  const backHalf = (which === 'back');
+  const backHalf = (which === 'back');               // 背半=上半(先画被星球盖)；前半=下半(盖星球)
   dctx.save();
+  // 屏幕空间：上/下半拆分前后环
   dctx.beginPath();
   if (backHalf) dctx.rect(0, 0, 1e6, cy); else dctx.rect(0, cy, 1e6, 1e6);
   dctx.clip();
-  // 本体本影：土星在环上投下的暗影（楔形）→ 真实且优美
-  dctx.save();
+  // 变换到"环平面未压扁"坐标：y 放大，椭圆→圆
+  dctx.translate(cx, cy);
+  dctx.scale(1, sq);
+  // 环形裁剪：外圆 - 内圆（evenodd）
   dctx.beginPath();
-  dctx.ellipse(cx, cy, rx, ry, alpha, 0, Math.PI * 2);
-  dctx.clip();
-  for (let s = 0; s < N; s++) {
-    const t = s / (N - 1);
-    const rm = rin + (rout - rin) * t;
+  dctx.arc(0, 0, rxO, 0, Math.PI * 2);
+  dctx.arc(0, 0, rxI, 0, Math.PI * 2);
+  dctx.clip('evenodd');
+  // 实心环面：圆形径向渐变（映射到椭圆环带），干净平滑无网格
+  const grad = dctx.createRadialGradient(0, 0, rxI, 0, 0, rxO);
+  const ST = 64;
+  for (let s = 0; s <= ST; s++) {
+    const t = s / ST;
     const idx = Math.round(t * 255);
     const a = ringGrad ? ringGrad.a[idx] : 0.5;
-    if (a < 0.03) continue;                            // 卡西尼缝：留空成天然暗缝
-    let r0 = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
-    let col = `rgba(${Math.min(255, r0 * 1.18) | 0},${Math.min(255, g0 * 1.18) | 0},${Math.min(255, b0 * 1.18) | 0},${Math.min(1, a * 1.5)})`;
-    dctx.strokeStyle = col;
-    dctx.lineWidth = lw;
-    dctx.beginPath();
-    dctx.ellipse(cx, cy, rm, rm * Math.max(0.05, Math.abs(sT)), alpha, 0, Math.PI * 2);
-    dctx.stroke();
+    let r = ringGrad ? ringGrad.r[idx] : 214, g = ringGrad ? ringGrad.g[idx] : 198, b = ringGrad ? ringGrad.b[idx] : 160;
+    r = Math.min(255, r * 1.08); g = Math.min(255, g * 1.08); b = Math.min(255, b * 1.08);
+    if (a < 0.02) grad.addColorStop(t, 'rgba(0,0,0,0)');
+    else grad.addColorStop(t, `rgba(${r | 0},${g | 0},${b | 0},${Math.min(1, a * 1.4)})`);
   }
-  // 土星本影（覆盖在环上）
-  dctx.fillStyle = 'rgba(8,6,4,0.55)';
-  dctx.beginPath();
-  dctx.ellipse(cx + L.x * rN * 0.6, cy + L.y * rN * 0.6, rN * 0.95, rN * 0.95 * Math.max(0.05, Math.abs(sT)), alpha, 0, Math.PI * 2);
-  dctx.fill();
-  dctx.restore();
+  dctx.fillStyle = grad;
+  dctx.beginPath(); dctx.arc(0, 0, rxO, 0, Math.PI * 2); dctx.fill();
+  // 土星本影：背光侧的柔和暗影（楔形，真实照片里环被星球影子切断）
+  const sgx = -L.x * rN * 0.78, sgy = (-L.y * rN * 0.78) / sq;
+  const sg = dctx.createRadialGradient(sgx, sgy, 0, sgx, sgy, rN * 1.75);
+  sg.addColorStop(0, 'rgba(16,11,5,0.62)');
+  sg.addColorStop(0.7, 'rgba(16,11,5,0.28)');
+  sg.addColorStop(1, 'rgba(16,11,5,0)');
+  dctx.fillStyle = sg;
+  dctx.beginPath(); dctx.arc(0, 0, rxO, 0, Math.PI * 2); dctx.fill();
+  // 受光侧柔和高光（前向散射，让环发亮有质感）
+  const hx = L.x * rxO * 0.5, hy = (L.y * rxO * 0.5) / sq;
+  const hg = dctx.createRadialGradient(hx, hy, 0, hx, hy, rxO * 1.1);
+  hg.addColorStop(0, 'rgba(255,250,235,0.22)');
+  hg.addColorStop(0.5, 'rgba(255,250,235,0.05)');
+  hg.addColorStop(1, 'rgba(255,250,235,0)');
+  dctx.fillStyle = hg;
+  dctx.beginPath(); dctx.arc(0, 0, rxO, 0, Math.PI * 2); dctx.fill();
   dctx.restore();
 }
 function drawDetail() {
