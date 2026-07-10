@@ -409,6 +409,10 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.12', date: '2026-07-10', type: 'minor', title: '月相条改到顶部 + 偶发流星', changes: [
+    '修复：地月系「月相周期 8 相条」原本贴在屏幕底部，被含“速度”滑块的控制面板挡住中间几个相；现移到顶部信息区（标题与“当前月相”下方），更醒目且不再被遮挡',
+    '新增：星空背景下偶发流星划过（平均约每 3 秒一颗、自动淡出），让页面更有活力与趣味',
+  ]},
   { ver: '2.11', date: '2026-07-10', type: 'minor', title: '体重体验 + 月相周期条', changes: [
     '详情页新增「💪 你的体重在这里」小工具：输入体重即实时算出在该天体表面的体重（基于真实表面重力），并用孩子能懂的话解释轻重感受',
     '地月系模式新增「月相周期」8 相名称条（新月/蛾眉/上弦/盈凸/满月/亏凸/下弦/残月），实时高亮当前所在月相，帮孩子建立完整月相周期概念',
@@ -1232,11 +1236,13 @@ function drawEarthMoonScene() {
   const chipW = Math.max(38, (maxW - (n - 1) * gap) / n);
   const chipH = 26;
   const totalW = n * chipW + (n - 1) * gap;
-  const sx = W / 2 - totalW / 2, sy = H - 44;
+  // 移到顶部信息区（标题 + “当前月相”下方），避开底部含“速度”滑块的控制面板遮挡
+  const barTop = 140, labelY = barTop - 16;
+  const sx = W / 2 - totalW / 2, sy = barTop;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '12.5px "PingFang SC","Microsoft YaHei",sans-serif';
   ctx.fillStyle = '#9fb0d8';
-  ctx.fillText('月相周期（当前高亮）', W / 2, sy - 18);
+  ctx.fillText('月相周期（当前高亮）', W / 2, labelY);
   for (let i = 0; i < n; i++) {
     const x = sx + i * (chipW + gap);
     const on = i === curIdx;
@@ -1250,6 +1256,38 @@ function drawEarthMoonScene() {
   }
 }
 
+/* ---------- 偶发流星（增加趣味） ---------- */
+let meteors = [];
+function spawnMeteor() {
+  // 从顶部或左侧随机出现，向右下方划过，约 45° 偏下
+  const fromTop = Math.random() < 0.5;
+  const x = fromTop ? Math.random() * W : -20;
+  const y = fromTop ? -20 : Math.random() * H * 0.5;
+  const ang = Math.PI / 4 + (Math.random() - 0.5) * 0.5;
+  const sp = 380 + Math.random() * 260;
+  meteors.push({ x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, life: 0, max: 0.9 + Math.random() * 0.5, len: 70 + Math.random() * 60 });
+}
+function updateMeteors(dt) {
+  if (playing && Math.random() < dt * 0.35 && meteors.length < 4) spawnMeteor(); // 平均约每 3 秒一颗
+  for (const m of meteors) { m.x += m.vx * dt; m.y += m.vy * dt; m.life += dt; }
+  meteors = meteors.filter(m => m.life < m.max && m.x < W + 90 && m.y < H + 90);
+}
+function drawMeteors() {
+  for (const m of meteors) {
+    const t = m.life / m.max;
+    const a = (1 - t) * 0.9;
+    const d = Math.hypot(m.vx, m.vy);
+    const tx = m.x - m.vx / d * m.len, ty = m.y - m.vy / d * m.len;
+    const g = ctx.createLinearGradient(m.x, m.y, tx, ty);
+    g.addColorStop(0, 'rgba(255,255,255,' + a + ')');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,250,220,' + a + ')';
+    ctx.beginPath(); ctx.arc(m.x, m.y, 2.2, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 /* ---------- 主渲染 ---------- */
 function render() {
   ctx.clearRect(0, 0, W, H);
@@ -1260,6 +1298,8 @@ function render() {
     ctx.fillStyle = 'rgba(255,255,255,' + s.a + ')';
     ctx.fillRect(q.x, q.y, 1.4, 1.4);
   }
+  // 偶发流星
+  drawMeteors();
   // 轨道
   if (emMode) { drawEarthMoonScene(); return; }
   for (const p of PLANETS) drawOrbit(p);
@@ -1295,6 +1335,7 @@ function frame(now) {
     }
   }
   updateCamera();
+  updateMeteors(dt);
   if (!detailOpen) render();
   requestAnimationFrame(frame);
 }
