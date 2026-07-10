@@ -1393,107 +1393,49 @@ function checkAllDone() {
 // 详情页土星环：与主场景一致——环在真实赤道面、按 SATURN_TILT+用户视角倾斜，并投射土星本影
 // which: 'back' 画背向相机的一半(星球之前)；'front' 画朝向相机的一半(星球之后)
 function drawDetailRing(rScreen, cx, cy, tilt, which, spin) {
-  // 真正的 3D 环：环面随土星自转轴倾斜(tilt)，并随行星自转(spin)一起转动 → 拖动旋转时环与星球同步。
-  // 每个环点先做 3D 旋转(绕 detail 视轴 tilt，再绕竖直轴 spin)，正交投影到屏幕；
-  // 比椭圆描边法更真实：环会随旋转呈现合理的透视、并在星球后方被本体遮挡(前后半分离)。
-  // 颜色取自真实环带数据(ringGrad)，方位明暗=受光/前向散射/土星本影(楔形暗带)，无网格。
-  const rin = rScreen * 1.3, rout = rScreen * 2.4;
-  const T = Math.max(0.04, Math.abs(tilt));          // 避免完全侧视时环塌成线
+  // 优美的实心土星环：一圈圈"同心椭圆环带"（描边），整体随土星自转(spin)与轴倾角(tilt)同步。
+  // 线宽略大于环间距 → 彼此叠盖成连续实体环面，不再像框线/网格；颜色取真实环带数据(含卡西尼缝)。
+  const rin = rScreen * 1.3 * (ringGrad ? 0.92 : 1), rout = rScreen * 2.4;
+  const T = Math.max(0.04, Math.abs(tilt));
   const cT = Math.cos(T), sT = Math.sin(T), cP = Math.cos(spin), sP = Math.sin(spin);
-  const L = DETAIL_LIGHT;                             // 详情页太阳方向（指向太阳）
-  const SEG = 220;                                   // 角向分辨率（密 → 边缘平滑）
-  // 本体半径用于本影遮挡判定
-  const rN = rScreen * 1.0;
-  // 预先算内外缘 3D 点（未投影）
-  const inE = [], outE = [];
-  for (let i = 0; i < SEG; i++) {
-    const ph = (i / SEG) * Math.PI * 2;
-    const cph = Math.cos(ph), sph = Math.sin(ph);
-    // 局部环面坐标 (x = r·cosφ, y = r·sinφ, z = 0)
-    inE.push({ lx: rin * cph, ly: rin * sph });
-    outE.push({ lx: rout * cph, ly: rout * sph });
-  }
-  const proj = (r, lx, ly) => {
-    const lz = 0;
-    // 绕 detail 视轴(局部 x) 倾斜 T
-    const y1 = lx * 0 + ly * cT + lz * (-sT);
-    const z1 = lx * 0 + ly * sT + lz * cT;
-    const x1 = lx;
-    // 绕竖直轴 spin
-    const x2 = x1 * cP + z1 * sP;
-    const z2 = -x1 * sP + z1 * cP;
-    const y2 = y1;
-    return { x: cx + x2, y: cy - y2, z: z2 };          // 屏幕：z>0 朝相机(前半)，z<0 背相机(后半)
-  };
-  // 计算一个环点的最终颜色/透明度
-  const shade = (P, t, ph) => {
-    const idx = Math.max(0, Math.min(255, Math.round(t * 255)));
-    const a0 = ringGrad ? ringGrad.a[idx] : 0.5;
-    if (a0 < 0.02) return null;                        // 卡西尼缝等 → 透明
+  const rx = rScreen * 2.4;                            // 环带水平半轴（外缘）
+  const ry = rx * Math.max(0.05, Math.abs(sT));        // 竖直半轴：随倾斜压扁 → 优美椭圆
+  const alpha = Math.atan2(sP * cT, 1);                // 环面随自转绕竖直轴的整体朝向（细微）
+  const N = 200;                                       // 同心椭圆数量（密 → 实心无隙）
+  const lw = (rout - rin) / N + 1.6;                   // 每环略宽于间距 → 叠盖成实体
+  const L = DETAIL_LIGHT, rN = rScreen * 1.0;
+  // 半环裁剪：背半=环面背向相机(z<0) → 屏幕上半；前半=朝向相机 → 下半
+  const backHalf = (which === 'back');
+  dctx.save();
+  dctx.beginPath();
+  if (backHalf) dctx.rect(0, 0, 1e6, cy); else dctx.rect(0, cy, 1e6, 1e6);
+  dctx.clip();
+  // 本体本影：土星在环上投下的暗影（楔形）→ 真实且优美
+  dctx.save();
+  dctx.beginPath();
+  dctx.ellipse(cx, cy, rx, ry, alpha, 0, Math.PI * 2);
+  dctx.clip();
+  for (let s = 0; s < N; s++) {
+    const t = s / (N - 1);
+    const rm = rin + (rout - rin) * t;
+    const idx = Math.round(t * 255);
+    const a = ringGrad ? ringGrad.a[idx] : 0.5;
+    if (a < 0.03) continue;                            // 卡西尼缝：留空成天然暗缝
     let r0 = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
-    // 环面朝向：太阳在屏幕内，环面法线=土星自转轴方向(0,sinT,cosT)·spin。
-    // 其"朝向相机/太阳"的程度由 L.y(竖直)决定：L.y>0 时环面略朝我们、偏亮；否则偏暗。
-    const ringUp = Math.sin(T);                        // 环面法线在屏幕竖直方向分量(已含倾斜)
-    let lit = 0.80 + 0.20 * (L.y >= 0 ? ringUp : -ringUp);   // 受光立体感
-    // 土星本影：该点在星球"身后"(相对太阳)且到影轴距离 < 本体半径 → 被遮挡成暗带
-    let occ = 0;
-    const ax = P.x - cx, ay = P.y - cy;                // 相对星球中心
-    const lproj = ax * L.x + ay * L.y;                 // 沿光方向位移
-    const perpD = Math.hypot(ax - lproj * L.x, ay - lproj * L.y);  // 到影轴距离
-    const behind = lproj;                              // >0 表示在星球相对太阳的另一侧
-    if (P.z < 0 && behind > 0 && perpD < rN) {
-      const w = (rout - rin) * 0.10 + 3;
-      const radial = 1 - Math.max(0, Math.min(1, Math.abs(perpD) / rN));   // 越近影轴越暗
-      const depth = Math.max(0, Math.min(1, behind / (rN * 1.6)));
-      occ = Math.max(0, Math.min(1, radial * depth * 1.0));
-    }
-    const k = Math.max(0, Math.min(1, lit * (1 - 0.74 * occ)));
-    let r = r0 * k * 1.12, g = g0 * k * 1.12, b = b0 * k * 1.12;  // 整体增亮、更饱满
-    // 卡西尼缝两侧亮边（贴合真实：缝内侧那道高亮环）
-    let edge = 0;
-    if (Math.abs(t - 0.475) < 0.014 || Math.abs(t - 0.50) < 0.014) edge = 0.20;
-    r = Math.min(255, r + edge * 255); g = Math.min(255, g + edge * 240); b = Math.min(255, b + edge * 200);
-    // 细密环纹：随行星自转缓慢漂移，使环"活"起来且随星球一起动
-    const wave = 0.90 + 0.10 * Math.sin(ph * 46 + spin * 3.0);
-    // 方位向特征：两道很淡的"辐条/密度波"，随自转一起转 → 旋转时清晰可见环在动
-    const spoke = 1
-      + 0.10 * Math.exp(-Math.pow(((ph + spin * 1.0) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - 0.6, 2) / 0.05)
-      + 0.10 * Math.exp(-Math.pow(((ph + spin * 1.0) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - (Math.PI * 2 - 1.9), 2) / 0.05);
-    return `rgba(${Math.min(255, r) | 0},${Math.min(255, g) | 0},${Math.min(255, b) | 0},${Math.min(1, a0 * 1.45 * wave * spoke)})`;
-  };
-  const inner = inE.map((p, i) => proj(rin, p.lx, p.ly));
-  const outer = outE.map((p, i) => proj(rout, p.lx, p.ly));
-  // 拆前后半（z=0 边界归后半）；多边形：内缘 0→SEG，外缘 SEG→0
-  const halfSet = (back) => {
-    const pts = [], cols = [];
-    for (let i = 0; i <= SEG; i++) {
-      const j = i % SEG;
-      const inside = inner[j].z <= 0;
-      if (inside === back) { pts.push(inner[j]); cols.push(shade(inner[j], (j / SEG) * (rout - rin) / (rout - rin), (j / SEG) * Math.PI * 2)); }
-    }
-    for (let i = SEG; i >= 0; i--) {
-      const j = i % SEG;
-      const outside = outer[j].z <= 0;
-      if (outside === back) { pts.push(outer[j]); cols.push(shade(outer[j], 1, (j / SEG) * Math.PI * 2)); }
-    }
-    return { pts, cols };
-  };
-  const drawHalf = (back) => {
-    const { pts, cols } = halfSet(back);
-    if (pts.length < 3) return;
-    dctx.lineJoin = 'round';
-    for (let i = 0; i < pts.length - 1; i++) {
-      if (!cols[i] || !cols[i + 1]) continue;
-      dctx.strokeStyle = cols[i];
-      dctx.lineWidth = 1.4;
-      dctx.beginPath();
-      dctx.moveTo(pts[i].x, pts[i].y);
-      dctx.lineTo(pts[i + 1].x, pts[i + 1].y);
-      dctx.stroke();
-    }
-  };
-  if (which === 'back') drawHalf(true);
-  else drawHalf(false);
+    let col = `rgba(${Math.min(255, r0 * 1.18) | 0},${Math.min(255, g0 * 1.18) | 0},${Math.min(255, b0 * 1.18) | 0},${Math.min(1, a * 1.5)})`;
+    dctx.strokeStyle = col;
+    dctx.lineWidth = lw;
+    dctx.beginPath();
+    dctx.ellipse(cx, cy, rm, rm * Math.max(0.05, Math.abs(sT)), alpha, 0, Math.PI * 2);
+    dctx.stroke();
+  }
+  // 土星本影（覆盖在环上）
+  dctx.fillStyle = 'rgba(8,6,4,0.55)';
+  dctx.beginPath();
+  dctx.ellipse(cx + L.x * rN * 0.6, cy + L.y * rN * 0.6, rN * 0.95, rN * 0.95 * Math.max(0.05, Math.abs(sT)), alpha, 0, Math.PI * 2);
+  dctx.fill();
+  dctx.restore();
+  dctx.restore();
 }
 function drawDetail() {
   const w = detailCanvas.clientWidth, h = detailCanvas.clientHeight;
