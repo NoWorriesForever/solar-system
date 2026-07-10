@@ -410,6 +410,12 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.14', date: '2026-07-10', type: 'minor', title: '成就面板修复 + 小彩蛋', changes: [
+    '修复：成就面板原本没有定位样式、且关闭按钮失效（.hidden 规则缺失），现在更新日志/成就共用弹窗样式，点击 ✕、点背景、按 Esc 都能正常关闭',
+    '彩蛋①：键盘输入秘籍「↑↑↓↓←→←→ B A」开启/关闭「🌈 彩虹尾巴」模式，行星公转时拖出彩色尾巴',
+    '彩蛋②：键盘连续输入「ufo」召唤一只飞碟从屏幕划过（带光束和小外星人）',
+    '彩蛋③：双击页面顶部大标题「🪐 太阳系 · 3D 运转演示」，会蹦出住在代码里的小宇航员跟你打招呼并召唤飞碟',
+  ]},
   { ver: '2.13', date: '2026-07-10', type: 'minor', title: '成就徽章系统', changes: [
     '新增「🏅 成就」按钮与成就面板：10 个面向探索的徽章（初来乍到 / 地月探索者 / 环游太阳系 / 陨石猎人 / 小小称重员 / 答题小能手 / 追星人 / 月相大师 / 凑近观察 / 更新日志读者）',
     '达成条件自动触发：看完全部行星、点小行星带、算一次体重、答对测验、看到流星、集齐 8 月相等都会弹出解锁提示',
@@ -1308,9 +1314,13 @@ function render() {
   }
   // 偶发流星
   drawMeteors();
+  // 小彩蛋：飞碟
+  drawUfo();
   // 轨道
   if (emMode) { drawEarthMoonScene(); return; }
   for (const p of PLANETS) drawOrbit(p);
+  // 小彩蛋：彩虹拖尾（开启时）
+  if (rainbowMode) drawRainbowTrails();
   // 太阳 + 行星
   drawSun();
   for (const p of PLANETS) drawPlanet(p);
@@ -1326,6 +1336,7 @@ let playing = true, timeScale = 1, last = performance.now();
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
+  gdt = dt;
   if (playing) {
     const eff = timeScale * SPEED_CALIB;   // 真实生效速度 = 显示值 × 1/3
     sunSpin += 0.4 * eff * dt;
@@ -1490,6 +1501,100 @@ document.getElementById('achClose').addEventListener('click', closeAchievements)
 document.getElementById('achBackdrop').addEventListener('click', closeAchievements);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAchievements(); });
 updateAchBtn();
+
+/* ---------- 小彩蛋（隐藏趣味，不影响科普） ---------- */
+let rainbowMode = false, gdt = 0;
+let ufo = null;                       // 飞碟彩蛋：{ x, y, vx, t } 或 null
+const eggSeq = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a'];
+let eggStep = 0, typedBuf = '', typedT = 0;
+
+function popToast(text) {
+  const c = document.getElementById('achToast'); if (!c) return;
+  const d = document.createElement('div'); d.className = 'ach-toast';
+  d.textContent = text; c.appendChild(d); setTimeout(() => d.remove(), 3200);
+}
+function toggleRainbow() {
+  rainbowMode = !rainbowMode;
+  if (!rainbowMode) for (const p of PLANETS) p._trail = [];
+  popToast(rainbowMode ? '🌈 秘籍解锁：彩虹尾巴模式！' : '🌈 彩虹模式已关闭');
+}
+function spawnUfo() {
+  if (ufo) return;
+  ufo = { x: -70, y: 70 + Math.random() * 150, vx: 150, t: 0 };
+  popToast('🛸 有不明飞行物出现！');
+}
+function drawUfo() {
+  if (!ufo) return;
+  ufo.x += ufo.vx * gdt; ufo.t += gdt;
+  const x = ufo.x, y = ufo.y;
+  // 光束
+  const beamA = 0.16 + 0.12 * Math.sin(ufo.t * 6);
+  const bg = ctx.createLinearGradient(x, y + 12, x, y + 130);
+  bg.addColorStop(0, 'rgba(150,235,255,' + beamA + ')');
+  bg.addColorStop(1, 'rgba(150,235,255,0)');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.moveTo(x - 14, y + 12); ctx.lineTo(x + 14, y + 12); ctx.lineTo(x + 32, y + 130); ctx.lineTo(x - 32, y + 130); ctx.closePath(); ctx.fill();
+  // 碟身
+  ctx.fillStyle = '#c2cde0';
+  ctx.beginPath(); ctx.ellipse(x, y, 28, 9, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#7d8aa6';
+  ctx.fillRect(x - 6, y + 6, 12, 5);
+  // 舱罩
+  const dg = ctx.createRadialGradient(x - 4, y - 6, 1, x, y - 2, 16);
+  dg.addColorStop(0, '#c8f6ff'); dg.addColorStop(1, '#3aa0c8');
+  ctx.fillStyle = dg;
+  ctx.beginPath(); ctx.ellipse(x, y - 4, 13, 11, 0, Math.PI, 0); ctx.fill();
+  // 小外星人
+  ctx.fillStyle = '#9be8a0';
+  ctx.beginPath(); ctx.arc(x, y - 8, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#10202a';
+  ctx.beginPath(); ctx.arc(x - 2, y - 9, 1.5, 0, Math.PI * 2); ctx.arc(x + 2, y - 9, 1.5, 0, Math.PI * 2); ctx.fill();
+  if (ufo.x > W + 90) ufo = null;
+}
+function drawRainbowTrails() {
+  let i = 0;
+  for (const p of PLANETS) {
+    const q = project(planetWorld(p));
+    if (!q.visible) { p._trail = []; continue; }
+    p._trail = p._trail || [];
+    p._trail.push({ x: q.x, y: q.y });
+    if (p._trail.length > 26) p._trail.shift();
+    const hue = (performance.now() * 0.05 + i * 40) % 360;
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    for (let k = 1; k < p._trail.length; k++) {
+      const a = p._trail[k - 1], b = p._trail[k];
+      ctx.strokeStyle = 'hsla(' + (((hue + k * 5) % 360 + 360) % 360) + ',90%,62%,' + (k / p._trail.length * 0.9) + ')';
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    i++;
+  }
+}
+window.addEventListener('keydown', (e) => {
+  if (e.target && e.target.tagName === 'INPUT') return;   // 输入框里打字不触发彩蛋
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  // 秘籍：上 上 下 下 左 右 左 右 B A
+  if (k === eggSeq[eggStep]) {
+    eggStep++;
+    if (eggStep === eggSeq.length) { eggStep = 0; toggleRainbow(); }
+  } else {
+    eggStep = (k === eggSeq[0]) ? 1 : 0;
+  }
+  // 打字彩蛋：连续输入 ufo
+  const now = performance.now();
+  if (now - typedT > 1500) typedBuf = '';
+  typedT = now;
+  if (k.length === 1) {
+    typedBuf += k;
+    if (typedBuf.length > 6) typedBuf = typedBuf.slice(-6);
+    if (typedBuf.endsWith('ufo')) { typedBuf = ''; spawnUfo(); }
+  }
+});
+// 双击顶部大标题：住在代码里的小宇航员
+const titleEl = document.querySelector('#ui h1');
+if (titleEl) titleEl.addEventListener('dblclick', () => {
+  popToast('🧑‍🚀 嘿！我是住在代码里的小宇航员，欢迎来太阳系玩！');
+  spawnUfo();
+});
 
 /* ============================================================
    星球详情页：点击星球 -> 左侧信息 + 右侧可旋转 3D 建模

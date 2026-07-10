@@ -129,42 +129,42 @@
     #detail .right { flex: 1; }
   }
 
-  /* 更新日志弹窗 */
-  #changelog { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; }
-  #changelog.hidden { display: none; }
-  #changelog .cl-backdrop { position: absolute; inset: 0; background: rgba(3,5,15,.66); backdrop-filter: blur(3px); }
-  #changelog .cl-panel {
+  /* 弹窗：更新日志 / 成就 共用同一套样式 */
+  #changelog, #achievements { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; }
+  #changelog.hidden, #achievements.hidden { display: none; }
+  .cl-backdrop { position: absolute; inset: 0; background: rgba(3,5,15,.66); backdrop-filter: blur(3px); }
+  .cl-panel {
     position: relative; width: min(640px, 92vw); max-height: 84vh;
     background: #0c1330; border: 1px solid #2a3766; border-radius: 16px;
     box-shadow: 0 20px 60px rgba(0,0,0,.55); display: flex; flex-direction: column; overflow: hidden;
     color: #eaf0ff; font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
   }
-  #changelog .cl-head {
+  .cl-head {
     display: flex; align-items: center; justify-content: space-between;
     padding: 16px 20px; border-bottom: 1px solid #1d2a52;
   }
-  #changelog .cl-head h2 { font-size: 18px; color: #eaf0ff; }
-  #changelog .cl-close {
+  .cl-head h2 { font-size: 18px; color: #eaf0ff; }
+  .cl-close {
     background: #1b2547; border: 1px solid #34437a; color: #cdd8ff;
     border-radius: 9px; width: 34px; height: 34px; font-size: 15px; cursor: pointer;
   }
-  #changelog .cl-close:active { transform: scale(.94); }
-  #changelog .cl-body { padding: 6px 22px 22px; overflow-y: auto; }
-  #changelog .cl-ver { margin-top: 18px; }
-  #changelog .cl-ver:first-child { margin-top: 12px; }
-  #changelog .cl-vhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-  #changelog .cl-vnum { font-size: 16px; font-weight: 700; color: #ffd166; font-variant-numeric: tabular-nums; }
-  #changelog .cl-vnum.major { color: #7aa2ff; }
-  #changelog .cl-type {
+  .cl-close:active { transform: scale(.94); }
+  .cl-body { padding: 6px 22px 22px; overflow-y: auto; }
+  .cl-ver { margin-top: 18px; }
+  .cl-ver:first-child { margin-top: 12px; }
+  .cl-vhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .cl-vnum { font-size: 16px; font-weight: 700; color: #ffd166; font-variant-numeric: tabular-nums; }
+  .cl-vnum.major { color: #7aa2ff; }
+  .cl-type {
     font-size: 11px; padding: 2px 9px; border-radius: 999px;
     background: #1b2547; color: #9fb0d8; border: 1px solid #34437a;
   }
-  #changelog .cl-type.major { background: rgba(122,162,255,.18); color: #9db8ff; border-color: #3a4f9e; }
-  #changelog .cl-date { font-size: 12.5px; color: #8a9bc4; }
-  #changelog .cl-title { font-size: 14px; color: #e7edff; margin: 5px 0 7px; font-weight: 600; }
-  #changelog .cl-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-  #changelog .cl-list li { font-size: 13.5px; line-height: 1.65; color: #cdd8ff; padding-left: 18px; position: relative; }
-  #changelog .cl-list li::before { content: "•"; position: absolute; left: 4px; color: #5b8cff; }
+  .cl-type.major { background: rgba(122,162,255,.18); color: #9db8ff; border-color: #3a4f9e; }
+  .cl-date { font-size: 12.5px; color: #8a9bc4; }
+  .cl-title { font-size: 14px; color: #e7edff; margin: 5px 0 7px; font-weight: 600; }
+  .cl-list { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+  .cl-list li { font-size: 13.5px; line-height: 1.65; color: #cdd8ff; padding-left: 18px; position: relative; }
+  .cl-list li::before { content: "•"; position: absolute; left: 4px; color: #5b8cff; }
 
   /* 成就系统 */
   #achToast { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
