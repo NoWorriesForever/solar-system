@@ -1122,10 +1122,11 @@ function frame(now) {
       emMoonAngle -= EM.moonOrbitSpeed * eff * dt;   // 月球公转方向与行星一致（自北向南看为逆时针）
       emMoonSpin = emMoonAngle;
     } else {
-      for (const p of PLANETS) { p.angle += p.orbitSpeed * eff * dt; p.spin += p.spinSpeed * eff * dt; }
-      for (const a of ASTEROIDS) { a.angle += a.orbitSpeed * eff * dt; a.spin += a.spinSpeed * eff * dt; }
-      MOON.angle += MOON.orbitSpeed * eff * dt;
-      MOON.spin += MOON.spinSpeed * eff * dt;
+      // 太阳系：所有行星、小行星带、月球公转与自转均为逆时针（自北黄极俯视为逆时针；本俯视相机下屏幕呈逆时针）
+      for (const p of PLANETS) { p.angle -= p.orbitSpeed * eff * dt; p.spin -= p.spinSpeed * eff * dt; }
+      for (const a of ASTEROIDS) { a.angle -= a.orbitSpeed * eff * dt; a.spin -= a.spinSpeed * eff * dt; }
+      MOON.angle -= MOON.orbitSpeed * eff * dt;
+      MOON.spin -= MOON.spinSpeed * eff * dt;
     }
   }
   updateCamera();
