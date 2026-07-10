@@ -1014,7 +1014,9 @@ function drawEarthMoonScene() {
   // 月球位置（地球在原点）
   const mPos = { x: EM.moonOrbitR * Math.cos(emMoonAngle), y: 0, z: EM.moonOrbitR * Math.sin(emMoonAngle) };
   // 月相：月球相对太阳的夹角（0=新月, 90=上弦, 180=满月, 270=下弦）
-  const ang = Math.atan2(mPos.z, mPos.x) * 180 / Math.PI;
+  // 注意：emMoonAngle 是递减的（屏幕上月球逆时针公转），故相位角取负，使月相按
+  // 正确天文顺序循环：新月→上弦→满月→下弦→新月（北半球：盈=右亮、亏=左亮）
+  const ang = (-emMoonAngle) * 180 / Math.PI;
   const illum = (1 - Math.cos(ang * Math.PI / 180)) / 2;
   const phase = emPhaseName(ang);
 
