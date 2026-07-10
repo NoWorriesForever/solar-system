@@ -1343,59 +1343,49 @@ function checkAllDone() {
 // which: 'back' 画背向相机的一半(星球之前)；'front' 画朝向相机的一半(星球之后)
 function drawDetailRing(rScreen, cx, cy, tilt, which) {
   const rin = rScreen * 1.3, rout = rScreen * 2.4;
-  const SEG = 150, RB = 22;                       // 高分段：环面更顺滑、卡西尼缝更细腻
+  const SEG = 160;                                  // 角向切片：仅用于按角度切出扇形，颜色本身连续无网格
   const ct = Math.cos(tilt), st = Math.sin(tilt);
-  const L = DETAIL_LIGHT;                         // 详情页太阳方向（来自 DETAIL_LIGHT）
-  const dA = (Math.PI * 2 / SEG) * 0.08;          // 角向轻微重叠，消除拼接缝
-  const quads = [];
+  const L = DETAIL_LIGHT;                           // 详情页太阳方向（来自 DETAIL_LIGHT）
+  const dA = Math.PI * 2 / SEG;
+  const ov = dA * 0.6;                              // 轻微角向重叠，覆盖抗锯齿边
+  const N = 48;                                     // 径向渐变采样数（连续着色，消除分带网格）
   for (let i = 0; i < SEG; i++) {
-    const a0 = (i / SEG) * Math.PI * 2, a1 = ((i + 1) / SEG) * Math.PI * 2;
-    const m0 = (a0 + a1) / 2;
-    // 环方向单位向量（已含真实轴倾角），与 drawSphere 的 tilt 变换一致
+    const a0 = i * dA, a1 = (i + 1) * dA, m0 = (a0 + a1) / 2;
     const dx = Math.cos(m0), dy = -Math.sin(m0) * st, dz = Math.sin(m0) * ct;
-    const along = dx * L.x + dy * L.y + dz * L.z;          // d·L：朝向太阳为正
+    const along = dx * L.x + dy * L.y + dz * L.z;   // d·L：朝向太阳为正
     const perp = Math.sqrt(Math.max(0, 1 - along * along)); // |d×L| ∈[0,1]
     // 土星本影：背阳侧(along<0)且到阴影轴距离 ρ·perp < 土星半径 rScreen 的环带被遮挡 → 楔形暗带
     const rhoC = (along < 0 && perp > 1e-3) ? rScreen / perp : -1;
-    for (let b = 0; b < RB; b++) {
-      const t0 = b / RB, t1 = (b + 1) / RB;
-      const ri = rin + (rout - rin) * t0, ro = rin + (rout - rin) * t1;
-      const idx = Math.max(0, Math.min(255, Math.floor(t0 * 255)));
+    const lit = 0.82 + 0.18 * Math.max(0, along);   // 受光立体感：向阳略亮、背阳略暗
+    // 该扇形的径向渐变：颜色只依赖半径；相邻扇形边界颜色完全一致 → 拼接无缝，无网格
+    const grad = dctx.createRadialGradient(cx, cy, rin, cx, cy, rout);
+    for (let s = 0; s <= N; s++) {
+      const t = s / N, rm = rin + (rout - rin) * t;
+      const idx = Math.max(0, Math.min(255, Math.floor(t * 255)));
       const a = ringGrad ? ringGrad.a[idx] : 0.5;
-      if (a < 0.02) continue;                     // 卡西尼缝等透明带跳过
-      const fr = ringGrad ? ringGrad.r[idx] : 214;
-      const fg = ringGrad ? ringGrad.g[idx] : 198;
-      const fb = ringGrad ? ringGrad.b[idx] : 160;
-      // 本影遮挡比例（按 ρ 中点），带柔边，避免硬切
+      if (a < 0.02) { grad.addColorStop(t, 'rgba(0,0,0,0)'); continue; }   // 卡西尼缝等透明带
+      const r = ringGrad ? ringGrad.r[idx] : 214, g = ringGrad ? ringGrad.g[idx] : 198, b = ringGrad ? ringGrad.b[idx] : 160;
       let occ = 0;
-      if (rhoC > 0) {
-        const rm = (ri + ro) * 0.5;
-        const w = (rout - rin) * 0.10 + 2;
-        occ = 1 - Math.max(0, Math.min(1, (rm - (rhoC - w)) / (2 * w)));
-      }
-      // 受光：向阳侧略亮、背阳侧略暗（立体感），再叠本影（不压黑到消失）
-      const lit = 0.80 + 0.20 * Math.max(0, along);
-      const k = lit * (1 - 0.62 * occ);
-      const alpha = Math.min(1, a * 1.3);
-      const fill = `rgba(${(fr * k) | 0},${(fg * k) | 0},${(fb * k) | 0},${alpha})`;
-      const corners = [
-        [ri, a0 - dA], [ro, a0 - dA], [ro, a1 + dA], [ri, a1 + dA]
-      ].map(([r, ang]) => {
-        const wx = r * Math.cos(ang), wy = -r * Math.sin(ang) * st, wz = r * Math.sin(ang) * ct;
-        return { x: cx + wx, y: cy - wy, z: wz };
-      });
-      const zMid = (corners[0].z + corners[2].z) / 2;
-      if (which === 'back' && zMid > 0) continue;     // 后半：只画背向相机(z<0)
-      if (which === 'front' && zMid <= 0) continue;   // 前半：只画朝向相机(z>0)
-      quads.push({ corners, fill });
+      if (rhoC > 0) { const w = (rout - rin) * 0.08 + 2; occ = 1 - Math.max(0, Math.min(1, (rm - (rhoC - w)) / (2 * w))); }
+      const k = lit * (1 - 0.6 * occ);              // 叠本影（不压黑到消失）
+      grad.addColorStop(t, `rgba(${(r * k) | 0},${(g * k) | 0},${(b * k) | 0},${Math.min(1, a * 1.3)})`);
     }
-  }
-  for (const q of quads) {
-    const c = q.corners;
-    dctx.fillStyle = q.fill;
+    // 扇形环面 path（含角向重叠），投影到屏幕
+    const aS = a0 - ov, aE = a1 + ov, steps = 6;
+    const pts = [];
+    for (let k = 0; k <= steps; k++) { const ang = aS + (aE - aS) * k / steps; pts.push([rin, ang]); }
+    for (let k = steps; k >= 0; k--) { const ang = aS + (aE - aS) * k / steps; pts.push([rout, ang]); }
+    const sc = pts.map(([r, ang]) => {
+      const wx = r * Math.cos(ang), wy = -r * Math.sin(ang) * st, wz = r * Math.sin(ang) * ct;
+      return { x: cx + wx, y: cy - wy, z: wz };
+    });
+    const zMid = (sc[0].z + sc[sc.length - 1].z) / 2;
+    if (which === 'back' && zMid > 0) continue;     // 后半：只画背向相机(z<0)
+    if (which === 'front' && zMid <= 0) continue;   // 前半：只画朝向相机(z>0)
+    dctx.fillStyle = grad;
     dctx.beginPath();
-    dctx.moveTo(c[0].x, c[0].y); dctx.lineTo(c[1].x, c[1].y);
-    dctx.lineTo(c[2].x, c[2].y); dctx.lineTo(c[3].x, c[3].y);
+    dctx.moveTo(sc[0].x, sc[0].y);
+    for (let k = 1; k < sc.length; k++) dctx.lineTo(sc[k].x, sc[k].y);
     dctx.closePath(); dctx.fill();
   }
 }
