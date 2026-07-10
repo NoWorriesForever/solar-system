@@ -391,7 +391,8 @@ let sunSpin = 0;
 
 /* ---------- 地月系专题场景（示意比例）：把太阳 + 地球 + 月球单独拉出来 ---------- */
 let emMode = false;
-let eclMode = false;                  // 日食月食模拟模式
+let emSub = 'phase';                  // 地月系子视图：'phase'=月相 / 'eclipse'=日食月食
+let eclMode = false;                  // 日食月食模拟模式（= emMode && emSub==='eclipse'）
 let eclMoonA = Math.PI;               // 月球在轨道上的角度（π=新月，位于太阳一侧）
 let eclNode = 0;                      // 轨道交点（黄白交点）进动相位，用于演示「不是每月都有食」
 let eclAuto = true;                   // 月球是否自动公转
@@ -418,6 +419,11 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.19', date: '2026-07-10', type: 'minor', title: '日食月食并入地月系分类', changes: [
+    '把「日食月食」从顶部独立视图改为「地月系」内部的子视图：顶部仅保留「太阳系 / 地月系」',
+    '进入地月系后，底部出现「月相 / 日食月食」切换，默认显示月相，点「日食月食」即可拖动月球观察食的发生',
+    '逻辑统一：eclMode 改为由 emMode && emSub===\'eclipse\' 派生，渲染/动画/拖拽判断无需改动',
+  ]},
   { ver: '2.18', date: '2026-07-10', type: 'minor', title: '日食月食模拟器', changes: [
     '新增「日食月食」视图模式：2D 示意图展示太阳(左)、地球、月球与三者之间的影子',
     '可拖动月球绕地球转：拖到地球和太阳之间→日食(月球影子投到地球)；拖到地球另一侧→月食(月球钻进地球影子，染成血月)',
@@ -1584,21 +1590,34 @@ playBtn.addEventListener('click', () => {
 const speed = document.getElementById('speed');
 const speedVal = document.getElementById('speedVal');
 speed.addEventListener('input', () => { timeScale = parseFloat(speed.value); speedVal.textContent = timeScale.toFixed(1) + '×'; });
-// 太阳系 / 地月系 切换
+// 太阳系 / 地月系 切换（地月系内部再分「月相 / 日食月食」两个子视图）
 function setViewMode(mode) {
   emMode = (mode === 'earthmoon');
-  eclMode = (mode === 'eclipse');
+  emSub = 'phase';                                  // 进入地月系默认显示月相
+  eclMode = emMode && emSub === 'eclipse';
+  document.getElementById('emSubModes').style.display = emMode ? 'flex' : 'none';
   if (emMode) unlock('earthmoon');
-  if (eclMode) { eclMoonA = Math.PI; eclNode = 0; eclAuto = true; eclDrag = false; }   // 进入时重置到新月位置
   document.querySelectorAll('#viewModes button').forEach((b) => b.classList.toggle('active', b.dataset.view === mode));
+  document.querySelectorAll('#emSubModes button').forEach((b) => b.classList.toggle('active', b.dataset.em === emSub));
   if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
-  else if (eclMode) { camYaw = 0.6; camPitch = 0.5; camDist = 1500; }
   else { camYaw = 0.6; camPitch = 0.5; camDist = 1500; target = { x: 0, y: 0, z: 0 }; }
+  updateCamera();
+  if (!detailOpen) render();
+}
+// 地月系子视图切换：月相 / 日食月食
+function setEmSub(sub) {
+  emSub = sub;
+  eclMode = emMode && sub === 'eclipse';
+  if (sub === 'eclipse') { eclMoonA = Math.PI; eclNode = 0; eclAuto = true; eclDrag = false; }   // 进入时重置到新月位置
+  document.querySelectorAll('#emSubModes button').forEach((b) => b.classList.toggle('active', b.dataset.em === sub));
   updateCamera();
   if (!detailOpen) render();
 }
 document.querySelectorAll('#viewModes button').forEach((b) => {
   b.addEventListener('click', () => setViewMode(b.dataset.view));
+});
+document.querySelectorAll('#emSubModes button').forEach((b) => {
+  b.addEventListener('click', () => setEmSub(b.dataset.em));
 });
 document.getElementById('resetBtn').addEventListener('click', () => {
   if (emMode) { camYaw = 0.5; camPitch = 0.42; camDist = 430; target = { x: 90, y: 0, z: 0 }; }
