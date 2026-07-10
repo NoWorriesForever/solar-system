@@ -80,6 +80,10 @@
   }
   #detail .g-result { font-size: 14.5px; line-height: 1.6; color: #ffe9b0; margin-top: 9px; }
   #detail .g-result b { color: #fff; font-size: 17px; }
+  #detail .gravity#d-age { background: rgba(255,158,207,.09); border-color: #4a2e3e; }
+  #detail #d-age .gravity-title { color: #ff9ecf; }
+  #detail .gravity#d-travel { background: rgba(157,214,255,.09); border-color: #2e4a5e; }
+  #detail #d-travel .gravity-title { color: #9dd6ff; }
   #detail .facts-title { font-size: 15px; color: #9fb0d8; margin: 4px 0 -4px; }
   #detail .facts { list-style: none; display: flex; flex-direction: column; gap: 10px; }
   #detail .facts li { font-size: 14.5px; line-height: 1.7; color: #e7edff; padding-left: 20px; position: relative; }
@@ -224,6 +228,18 @@
           <input type="number" id="d-weight" value="30" min="1" max="500" /> <span>公斤</span>
         </div>
         <div class="g-result" id="d-gresult"></div>
+      </div>
+      <div class="gravity" id="d-age">
+        <div class="gravity-title">🎂 你的外星年龄</div>
+        <div class="gravity-row">
+          <label for="d-age-input">我的年龄</label>
+          <input type="number" id="d-age-input" value="10" min="1" max="120" /> <span>岁（地球）</span>
+        </div>
+        <div class="g-result" id="d-age-result"></div>
+      </div>
+      <div class="gravity" id="d-travel">
+        <div class="gravity-title">🚀 去这颗星球旅行</div>
+        <div class="g-result" id="d-travel-result"></div>
       </div>
       <div class="facts-title">趣味小知识</div>
       <ul class="facts" id="d-facts"></ul>

@@ -410,6 +410,11 @@ const EM = {
    字段：ver 版本号 / date 日期 / type 'major'|'minor' / title 标题 / changes 变更点数组
    ============================================================ */
 const CHANGELOG = [
+  { ver: '2.17', date: '2026-07-10', type: 'minor', title: '太空旅行计算器 + 外星年龄', changes: [
+    '详情页新增「🚀 去这颗星球旅行」：真实距太阳距离(AU/km) + 太阳光照时间 + 从地球坐火箭的霍曼转移时间(最省燃料飞法，与真实探测器吻合)',
+    '详情页新增「🎂 你的外星年龄」：输入地球年龄，按各行星公转周期换算——水星上 10岁≈42岁，海王星上还不到 1 岁，月球上已过 134 个「月球年」',
+    '太阳/月球/小行星带/地球各有专属文案（太阳光到地球8分钟、阿波罗3天到月球等），体重+年龄+旅行组成完整的「在别的星球」体验',
+  ]},
   { ver: '2.16', date: '2026-07-10', type: 'minor', title: '小行星详情页建模提亮 + 性能优化', changes: [
     '提亮贝努岩石模型：基色由暗灰棕(150,142,128)改为暖岩色(200,182,150)，环境光 0.40→0.42，整体更明亮',
     '光照升级：在漫反射基础上增加高光(pow(d,6)*0.20)与轮廓光(边缘 rim +0.10)，岩石更有立体质感',
@@ -1700,6 +1705,75 @@ function closeDetail() {
   updateCamera();
   render();            // 立即重绘主场景，避免返回瞬间出现黑屏
 }
+/* ---------- 太空旅行 + 外星年龄（面向小学生的趣味换算，数据真实）---------- */
+const AU_KM = 1.496e8;            // 1 天文单位 ≈ 1.496 亿公里
+const LIGHT_MIN_PER_AU = 8.317;   // 光走 1 AU ≈ 8.317 分钟
+function fmtKm(km) {
+  if (km >= 1e8) return (km / 1e8).toFixed(2) + ' 亿 km';
+  if (km >= 1e4) return (km / 1e4).toFixed(1) + ' 万 km';
+  return km.toFixed(0) + ' km';
+}
+function fmtLightMin(min) {
+  if (min < 1 / 60) return (min * 60).toFixed(1) + ' 秒';
+  if (min < 60) return min.toFixed(min < 10 ? 1 : 0) + ' 分钟';
+  return (min / 60).toFixed(1) + ' 小时';
+}
+function fmtTransferYears(yr) {
+  if (yr < 1 / 365) { const h = yr * 365 * 24; return h < 1 ? (h * 60).toFixed(0) + ' 分钟' : h.toFixed(0) + ' 小时'; }
+  if (yr < 1) return (yr * 365).toFixed(0) + ' 天';
+  if (yr < 2) { const d = (yr - 1) * 365; return '1 年' + (d >= 30 ? Math.round(d / 30) + ' 个月' : d.toFixed(0) + ' 天'); }
+  return yr.toFixed(1) + ' 年';
+}
+function fmtPlanetYears(py) {
+  if (py >= 1) return py.toFixed(py < 10 ? 1 : 0) + ' 岁';
+  const m = py * 12;
+  if (m >= 1) return m.toFixed(0) + ' 个月大';
+  return (m * 30).toFixed(0) + ' 天大';
+}
+// 霍曼转移时间（年）：从地球(1AU)到 targetAU 的最省燃料飞行时间，T = 0.5·√(a³)，a=(1+targetAU)/2
+function hohmannYears(targetAU) { const a = (1 + targetAU) / 2; return 0.5 * Math.sqrt(a * a * a); }
+
+function travelInfo(p) {
+  if (p.name === '地球') return { show: false };
+  if (p.name === '太阳') return {
+    show: true,
+    lines: ['离地球：' + fmtKm(AU_KM),
+            '太阳光照到地球：' + fmtLightMin(LIGHT_MIN_PER_AU),
+            '坐火箭？太阳表面 5500℃，飞过去会被烤化哦！'],
+    note: '我们看到的是 8 分钟前的太阳——如果太阳此刻熄灭，我们要 8 分钟后才知道！'
+  };
+  if (p.name === '月球') return {
+    show: true,
+    lines: ['离地球：' + fmtKm(384400),
+            '月光照到地球：' + fmtLightMin(384400 / AU_KM * LIGHT_MIN_PER_AU),
+            '坐火箭（阿波罗飞船速度）：约 3 天'],
+    note: '1969 年人类就是花 3 天飞到月球，踩下了月球上的第一个脚印！'
+  };
+  const au = (p === BELT) ? 2.7 : p.au;
+  const ty = hohmannYears(au);
+  const lm = au * LIGHT_MIN_PER_AU;
+  const where = (p === BELT) ? '小行星带中心离太阳' : '离太阳';
+  return {
+    show: true,
+    lines: [where + '：' + au.toFixed(2) + ' AU（' + fmtKm(au * AU_KM) + '）',
+            '太阳光照过来：' + fmtLightMin(lm),
+            '从地球坐火箭：约 ' + fmtTransferYears(ty)],
+    note: '🚀 火箭走「霍曼转移轨道」——最省燃料的飞法，真实探测器的时间就在这附近。'
+  };
+}
+function ageInfo(p, earthAge) {
+  if (p.name === '太阳' || p === BELT) return { show: false };
+  if (p.name === '月球') {
+    const py = earthAge * 365.25 / 27.32;
+    return { show: true, text: '月球绕地球一圈只要 27 天，你已经过了 <b>' + py.toFixed(0) + '</b> 个「月球年」啦！' };
+  }
+  const py = earthAge * 365.25 / p.period;
+  let extra = '';
+  if (py >= 20) extra = '（在这里你已经是老寿星啦！）';
+  else if (py < 1) extra = '（在这里你还没满一岁呢！）';
+  return { show: true, text: '在这里你已经 <b>' + fmtPlanetYears(py) + '</b> ' + extra };
+}
+
 function fillDetailInfo(p) {
   document.getElementById('d-name').textContent = p.name;
   document.getElementById('d-tag').textContent = p.tagline || '';
@@ -1727,6 +1801,38 @@ function fillDetailInfo(p) {
     calc();
   } else if (gEl) {
     gEl.style.display = 'none';
+  }
+  // 外星年龄：按公转周期换算（水星年=88天 → 10岁≈42个水星岁）
+  const ageEl = document.getElementById('d-age');
+  const ageInput = document.getElementById('d-age-input');
+  const ageRes = document.getElementById('d-age-result');
+  if (ageEl && ageInput && ageRes) {
+    const ai0 = ageInfo(p, 10);
+    if (ai0.show) {
+      ageEl.style.display = '';
+      const calcAge = () => {
+        const a = parseFloat(ageInput.value);
+        if (!isFinite(a) || a <= 0) { ageRes.textContent = '请输入有效年龄～'; return; }
+        ageRes.innerHTML = ageInfo(p, a).text;
+      };
+      ageInput.oninput = calcAge;
+      calcAge();
+    } else {
+      ageEl.style.display = 'none';
+    }
+  }
+  // 太空旅行：真实距离 + 霍曼转移火箭时间 + 光速时间
+  const trEl = document.getElementById('d-travel');
+  const trRes = document.getElementById('d-travel-result');
+  if (trEl && trRes) {
+    const ti = travelInfo(p);
+    if (ti.show) {
+      trEl.style.display = '';
+      trRes.innerHTML = ti.lines.map(l => '<div style="margin:3px 0">' + l + '</div>').join('') +
+        '<div style="margin-top:7px;font-size:12.5px;color:#9fb0d8">' + ti.note + '</div>';
+    } else {
+      trEl.style.display = 'none';
+    }
   }
   const note = document.getElementById('d-model-note');
   if (note) note.textContent = p.modelNote || '';
