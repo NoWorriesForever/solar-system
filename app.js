@@ -478,44 +478,56 @@ function ringWorld(r, a, pos) {
 }
 function drawSaturnRing(pos, centerDepth, visualR) {
   const rin = visualR * 1.3, rout = visualR * 2.4;
-  const SEG = 120;                                  // 分段更细，环更顺滑
-  const sd = norm(pos);                             // 阴影轴：由太阳(原点)指向土星
+  const SEG = 140;                                  // 角向分段
+  const sd = norm(pos);                             // 土星→太阳方向（阴影轴）
+  const sp = project(pos);                          // 土星屏幕投影（渐变中心）
+  if (!sp.visible) return [];
+  const scale = focal / sp.depth;                   // world→screen（土星深度处）
+  const rinS = scale * rin, routS = scale * rout;
+  const N = 72;                                     // 径向渐变采样：连续着色，消除色块/网格
   const back = [], front = [];
   for (let i = 0; i < SEG; i++) {
     const a0 = (i / SEG) * Math.PI * 2, a1 = ((i + 1) / SEG) * Math.PI * 2;
-    const q = [
-      ringWorld(rin, a0, pos), ringWorld(rout, a0, pos),
-      ringWorld(rout, a1, pos), ringWorld(rin, a1, pos),
-    ];
+    const q = [ringWorld(rin, a0, pos), ringWorld(rout, a0, pos), ringWorld(rout, a1, pos), ringWorld(rin, a1, pos)];
     const mid = project({ x: (q[0].x + q[2].x) / 2, y: (q[0].y + q[2].y) / 2, z: (q[0].z + q[2].z) / 2 });
     if (!mid.visible) continue;
-    // 土星投影阴影：环点若位于土星背阳侧、且靠近阴影轴，则被行星本影遮暗
+    // 土星本影：环点处于背阳侧(along>0)且靠近阴影轴(垂直距离<土星半径)→被遮挡
     const vx = mid.x - pos.x, vy = mid.y - pos.y, vz = mid.z - pos.z;
     const along = vx * sd.x + vy * sd.y + vz * sd.z;
     let shade = 1;
     if (along > 0) {
       const perp = Math.sqrt(Math.max(0, (vx * vx + vy * vy + vz * vz) - along * along));
       const r = visualR;
-      if (perp < r) shade = 0.14;
-      else if (perp < r * 2.1) shade = 0.14 + 0.86 * ((perp - r) / (r * 1.1));
-      shade = Math.max(0.14, Math.min(1, shade));
+      if (perp < r) shade = 0.12;
+      else if (perp < r * 2.1) shade = 0.12 + 0.88 * ((perp - r) / (r * 1.1));
+      shade = Math.max(0.12, Math.min(1, shade));
     }
-    const rm = (rin + rout) / 2;
-    const idx = Math.max(0, Math.min(255, Math.floor(((rm - rin) / (rout - rin)) * 255)));
-    let fr, fg, fb, fa;
-    if (ringGrad) {
-      fr = ringGrad.r[idx]; fg = ringGrad.g[idx]; fb = ringGrad.b[idx]; fa = Math.min(1, ringGrad.a[idx] * 1.3);
-    } else { fr = 214; fg = 198; fb = 160; fa = 0.5; }
-    const k = 0.12 + 0.88 * shade;                  // 阴影处压暗，亮处保持原色
-    const fill = `rgba(${(fr * k) | 0},${(fg * k) | 0},${(fb * k) | 0},${fa})`;
-    (mid.depth < centerDepth ? back : front).push({ q, fill });
+    // 前向散射：朝太阳一侧(along<0)的环更亮、偏白（真实土星环满相时发白增亮）
+    const sun = -along;
+    const fwd = Math.max(0, Math.min(1, (sun - 0.35) / 0.65));
+    const k = shade * (1 + 0.40 * fwd);
+    const wMix = fwd * 0.32;
+    const grad = ctx.createRadialGradient(sp.x, sp.y, rinS, sp.x, sp.y, routS);
+    for (let s = 0; s <= N; s++) {
+      const t = s / N;
+      const idx = Math.max(0, Math.min(255, Math.floor(t * 255)));
+      const a = ringGrad ? ringGrad.a[idx] : 0.5;
+      if (a < 0.02) { grad.addColorStop(t, 'rgba(0,0,0,0)'); continue; }   // 卡西尼缝等透明带
+      let r = ringGrad ? ringGrad.r[idx] : 214;
+      let g = ringGrad ? ringGrad.g[idx] : 198;
+      let b = ringGrad ? ringGrad.b[idx] : 160;
+      r = r + (255 - r) * wMix; g = g + (248 - g) * wMix; b = b + (232 - b) * wMix;  // 白化高光
+      r *= k; g *= k; b *= k;
+      grad.addColorStop(t, `rgba(${r | 0},${g | 0},${b | 0},${Math.min(1, a * 1.25)})`);
+    }
+    (mid.depth < centerDepth ? back : front).push({ q, grad });
   }
   const drawSet = (set) => {
     for (const item of set) {
       const q = item.q;
       const p0 = project(q[0]), p1 = project(q[1]), p2 = project(q[2]), p3 = project(q[3]);
       if (!(p0.visible && p1.visible && p2.visible && p3.visible)) continue;
-      ctx.fillStyle = item.fill;
+      ctx.fillStyle = item.grad;
       ctx.beginPath();
       ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.lineTo(p3.x, p3.y);
       ctx.closePath(); ctx.fill();
@@ -739,25 +751,63 @@ function buildRingGrad(tex) {
     }
     ringGrad.r.push(rs / c); ringGrad.g.push(gs / c); ringGrad.b.push(bs / c); ringGrad.a.push(as / c / 255);
   }
+  smoothRingGrad(ringGrad);   // 真实贴图版柔化，消除采样硬边（离线程序化版不含此步以保留细密环纹）
 }
-// 程序化环渐变（离线回退）：按真实环带结构生成 256 级径向颜色/透明度
-// C 环(暗淡) → B 环(最亮) → 卡西尼缝(明显暗带) → A 环(中等,含恩克缝细缝) → F 环外缘(稀薄)
+// 程序化环渐变（离线回退）：暖金/香槟色调 + 细密同心环纹 + 真实环缝结构
+// 先由控制点描述大尺度环带（C→B→卡西尼缝→A→F），再在其上叠加细密环纹，
+// 颜色用亮纹偏暖金白、暗纹偏棕褐，模拟卡西尼号看到的真实土星环质感。
 function buildProceduralRingGrad() {
-  const n = 256; const g = { r: [], g: [], b: [], a: [] };
-  for (let i = 0; i < n; i++) {
-    const t = i / (n - 1);                 // 0=内缘 1=外缘
-    let r = 214, gg = 198, b = 160, a = 0.5;
-    if (t < 0.22) { a = 0.28; r = 150; gg = 140; b = 120; }          // C 环：暗淡半透明
-    else if (t < 0.25) { a = 0.45; }                                  // C/B 过渡
-    else if (t < 0.46) { a = 0.85; r = 226; gg = 210; b = 170; }      // B 环：最亮最宽
-    else if (t < 0.50) { a = 0.05; r = 120; gg = 112; b = 96; }       // 卡西尼缝：真实大缝隙
-    else if (t < 0.92) { a = 0.6; r = 210; gg = 196; b = 158;        // A 环：中等亮
-      if (t > 0.86 && t < 0.885) { a = 0.12; } }                      // 恩克缝：A 环内细缝
-    else { a = 0.22; }                                                // F 环外缘：稀薄
-    const nz = 0.92 + 0.16 * Math.sin(t * 140);                       // 轻微噪声，环带更自然
-    g.r.push(r * nz); g.g.push(gg * nz); g.b.push(b * nz); g.a.push(a);
+  const n = 256;
+  const out = { r: [], g: [], b: [], a: [] };
+  // 控制点（t, alpha, R, G, B）——大尺度环带；平滑过渡避免硬边
+  const cps = [
+    [0.00, 0.05, 150, 142, 128],
+    [0.10, 0.30, 168, 156, 140],
+    [0.20, 0.22, 176, 162, 142],
+    [0.24, 0.92, 234, 206, 150],   // B 环内
+    [0.35, 0.96, 240, 214, 160],   // B 环最亮最宽
+    [0.45, 0.82, 226, 200, 150],   // B 环外
+    [0.475, 0.02, 120, 112, 96],   // 卡西尼缝（真实大缝隙，近透明）
+    [0.50, 0.72, 232, 214, 176],   // A 环内缘亮环（卡西尼缝后那道亮环，真实可见）
+    [0.62, 0.42, 192, 180, 152],   // 惠更斯缝（A 环中缝）
+    [0.72, 0.64, 222, 206, 168],   // A 环
+    [0.875, 0.10, 152, 144, 126],  // 恩克缝（A 环内细缝）
+    [0.90, 0.56, 214, 200, 164],   // A 环外
+    [0.95, 0.16, 180, 170, 148],   // F 环（稀薄）
+    [1.00, 0.05, 162, 154, 138],
+  ];
+  const sm = (x) => x * x * (3 - 2 * x);          // smoothstep 平滑插值
+  function sample(t) {
+    let i = 0; while (i < cps.length - 1 && t > cps[i + 1][0]) i++;
+    const a = cps[i], b = cps[Math.min(i + 1, cps.length - 1)];
+    const span = (b[0] - a[0]) || 1;
+    const u = sm(Math.max(0, Math.min(1, (t - a[0]) / span)));
+    return {
+      al: a[1] + (b[1] - a[1]) * u,
+      r:  a[2] + (b[2] - a[2]) * u,
+      g:  a[3] + (b[3] - a[3]) * u,
+      b:  a[4] + (b[4] - a[4]) * u,
+    };
   }
-  return g;
+  const TWO_PI = Math.PI * 2;
+  const F = 44;                                    // 细密环纹频率（匹配绘制采样，避免混叠）
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const base = sample(t);
+    // 准周期细密环纹：多频凸组合，w∈[0,1]
+    let w = 0.5 + 0.5 * Math.sin(t * TWO_PI * F);
+    w = w * 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * TWO_PI * F * 2.3 + 1.3));
+    w = w * 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(t * TWO_PI * F * 0.5 + 0.7));
+    let a = base.al * (1 - 0.24 + 0.48 * w);       // 环纹亮度起伏 ±24%
+    a = Math.max(0, Math.min(1, a));
+    // 颜色细纹：亮纹偏暖金白、暗纹偏棕褐，丰富质感
+    const cm = w;
+    let cr = base.r + (250 - base.r) * cm * 0.30 + (150 - base.r) * (1 - cm) * 0.28;
+    let cg = base.g + (232 - base.g) * cm * 0.30 + (118 - base.g) * (1 - cm) * 0.28;
+    let cb = base.b + (190 - base.b) * cm * 0.30 + (86 - base.b) * (1 - cm) * 0.28;
+    out.r.push(cr); out.g.push(cg); out.b.push(cb); out.a.push(a);
+  }
+  return out;
 }
 // 柔化程序化环的径向分布，消除分带硬边/锯齿（不影响联网的真实贴图版）
 function smoothRingGrad(g, pass) {
@@ -1348,7 +1398,7 @@ function drawDetailRing(rScreen, cx, cy, tilt, which) {
   const L = DETAIL_LIGHT;                           // 详情页太阳方向（来自 DETAIL_LIGHT）
   const dA = Math.PI * 2 / SEG;
   const ov = dA * 0.6;                              // 轻微角向重叠，覆盖抗锯齿边
-  const N = 48;                                     // 径向渐变采样数（连续着色，消除分带网格）
+  const N = 96;                                     // 径向渐变采样数（连续着色，消除分带网格，足够表现细密环纹）
   for (let i = 0; i < SEG; i++) {
     const a0 = i * dA, a1 = (i + 1) * dA, m0 = (a0 + a1) / 2;
     const dx = Math.cos(m0), dy = -Math.sin(m0) * st, dz = Math.sin(m0) * ct;
@@ -1356,7 +1406,9 @@ function drawDetailRing(rScreen, cx, cy, tilt, which) {
     const perp = Math.sqrt(Math.max(0, 1 - along * along)); // |d×L| ∈[0,1]
     // 土星本影：背阳侧(along<0)且到阴影轴距离 ρ·perp < 土星半径 rScreen 的环带被遮挡 → 楔形暗带
     const rhoC = (along < 0 && perp > 1e-3) ? rScreen / perp : -1;
-    const lit = 0.82 + 0.18 * Math.max(0, along);   // 受光立体感：向阳略亮、背阳略暗
+    const fwd = Math.max(0, Math.min(1, (along - 0.35) / 0.65));   // 前向散射强度：满相(正对太阳)最强
+    const lit = (0.80 + 0.20 * Math.max(0, along)) * (1 + 0.30 * fwd);  // 受光立体感 + 满相增亮
+    const wMix = fwd * 0.30;                          // 满相时向白色混合 → 发白的高光，真实且美丽
     // 该扇形的径向渐变：颜色只依赖半径；相邻扇形边界颜色完全一致 → 拼接无缝，无网格
     const grad = dctx.createRadialGradient(cx, cy, rin, cx, cy, rout);
     for (let s = 0; s <= N; s++) {
@@ -1364,7 +1416,8 @@ function drawDetailRing(rScreen, cx, cy, tilt, which) {
       const idx = Math.max(0, Math.min(255, Math.floor(t * 255)));
       const a = ringGrad ? ringGrad.a[idx] : 0.5;
       if (a < 0.02) { grad.addColorStop(t, 'rgba(0,0,0,0)'); continue; }   // 卡西尼缝等透明带
-      const r = ringGrad ? ringGrad.r[idx] : 214, g = ringGrad ? ringGrad.g[idx] : 198, b = ringGrad ? ringGrad.b[idx] : 160;
+      const r0 = ringGrad ? ringGrad.r[idx] : 214, g0 = ringGrad ? ringGrad.g[idx] : 198, b0 = ringGrad ? ringGrad.b[idx] : 160;
+      let r = r0 + (255 - r0) * wMix, g = g0 + (248 - g0) * wMix, b = b0 + (232 - b0) * wMix;  // 白化高光
       let occ = 0;
       if (rhoC > 0) { const w = (rout - rin) * 0.08 + 2; occ = 1 - Math.max(0, Math.min(1, (rm - (rhoC - w)) / (2 * w))); }
       const k = lit * (1 - 0.6 * occ);              // 叠本影（不压黑到消失）
@@ -1523,8 +1576,7 @@ document.getElementById('backBtn').addEventListener('click', closeDetail);
 /* ---------- 启动 ---------- */
 resize();
 buildTextures();      // 程序化回退源（断网可用）
-ringGrad = buildProceduralRingGrad();   // 土星环离线分带（含卡西尼缝/恩克缝），联网后由真实贴图覆盖
-smoothRingGrad(ringGrad);   // 柔化分带硬边，消除卡西尼缝锯齿
+ringGrad = buildProceduralRingGrad();   // 土星环离线版：自带平滑控制点+细密环纹，无需再柔化（否则会抹平环纹）；联网真实贴图由 buildRingGrad 内柔化
 loadRealTextures();   // 联网时用真实照片贴图覆盖
 loadAsteroidModel();  // 解析内嵌的真实贝努(Bennu)形状模型（window.BENNU_OBJ），离线可用；缺失则回退程序化岩石
 updateCamera();
