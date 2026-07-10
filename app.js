@@ -990,6 +990,25 @@ function emPhaseName(deg) {
   if (a <= 285) return '下弦月';
   return '残月';
 }
+// 在 2D 圆盘上画出「当前月相」的样子（北半球习惯：盈=右侧受光，亏=左侧受光）
+// illum: 受光比例 0~1；litOnRight: 受光面是否朝右
+function drawMoonPhaseDisk(cx, cy, R, illum, litOnRight) {
+  // 阴影面（整盘先铺底）
+  ctx.fillStyle = 'rgba(38,44,62,0.96)';
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  // 受光面：由半圆轮廓 + 终止线半椭圆组成
+  ctx.fillStyle = '#f3efe2';
+  const a = (1 - 2 * illum) * R;            // 终止线水平半轴（带符号：>0 凸向右，<0 凸向左）
+  ctx.beginPath();
+  if (litOnRight) ctx.arc(cx, cy, R, -Math.PI / 2, Math.PI / 2, false);   // 右半圆轮廓（顶→底经右侧）
+  else            ctx.arc(cx, cy, R, -Math.PI / 2, Math.PI / 2, true);    // 左半圆轮廓（顶→底经左侧）
+  const bulgeRight = litOnRight ? (a > 0) : (a < 0);
+  ctx.ellipse(cx, cy, Math.abs(a) || 1e-4, R, 0, Math.PI / 2, -Math.PI / 2, bulgeRight);
+  ctx.closePath(); ctx.fill();
+  // 细描边，深色背景上更清晰
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+}
 function drawEarthMoonScene() {
   const sunPos = { x: EM.sunDist, y: 0, z: 0 };
   // 月球位置（地球在原点）
@@ -1053,11 +1072,17 @@ function drawEarthMoonScene() {
   ctx.fillStyle = '#cfe0ff';
   ctx.fillText('地月系（示意比例：距离与大小为方便观察已压缩）', W / 2, 58);
   const cap = '当前月相：' + phase + '（亮面约 ' + Math.round(illum * 100) + '%）';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = '14px "PingFang SC","Microsoft YaHei",sans-serif';
+  const capY = 104;
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillText(cap, W / 2 + 1, 82 + 1);
+  ctx.fillText(cap, W / 2 + 1, capY + 1);
   ctx.fillStyle = '#ffe08a';
-  ctx.fillText(cap, W / 2, 82);
+  ctx.fillText(cap, W / 2, capY);
+  // 在文字右侧画一个真实的月相小图，让孩子直观看到「当前是哪一种月相」
+  const litOnRight = (ang >= 0 && ang < 180);
+  const diskR = 15, diskX = W / 2 + ctx.measureText(cap).width / 2 + 24, diskY = capY;
+  drawMoonPhaseDisk(diskX, diskY, diskR, illum, litOnRight);
 }
 
 /* ---------- 主渲染 ---------- */
